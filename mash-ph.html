@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mash pH Estimator — BrewPhase</title>
+<meta name="description" content="Estimate mash pH from your grain bill and water's residual alkalinity. A simplified model — verify with a pH meter.">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <a class="brand" href="index.html">Brew<span>Phase</span></a>
+  <nav class="tools" aria-label="Calculators">
+    <a href="priming-sugar.html">Priming</a>
+    <a href="liquor-builder.html">Liquor</a>
+    <a href="mash-ph.html" aria-current="page">Mash pH</a>
+    <a href="chloride-sulfate.html">Cl:SO₄</a>
+    <a href="water-blending.html">Blending</a>
+  </nav>
+</div></header>
+
+<main class="wrap">
+  <h1>Mash pH estimator <span class="tag">estimate</span></h1>
+  <p class="lede">Enter your grain bill and your water's residual alkalinity. Get a ballpark mash pH before you brew — then confirm it with a meter on brew day.</p>
+
+  <div class="note warn"><strong>This is an estimate, not a measurement.</strong> It uses a simplified model<sup><a href="#fn1">1</a></sup> and can be off by 0.1–0.2 pH or more. Use it to plan adjustments; use a calibrated pH meter to know your actual mash pH.</div>
+
+  <div class="why"><strong>Why mash pH matters</strong>
+    Mash enzymes work best around pH 5.2–5.6 (measured at room temperature). Pale malts pull the mash toward the high end, dark malts pull it down, and alkaline water pushes it up. Getting close means better conversion, clearer beer, and cleaner flavour.</div>
+
+  <form class="card" autocomplete="off" onsubmit="return false">
+    <h2>Grain bill</h2>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+      <div class="seg" role="group" aria-label="Weight unit"><button type="button" data-w="lb">lb</button><button type="button" data-w="kg">kg</button></div>
+      <div class="seg" role="group" aria-label="Color unit"><button type="button" data-c="L">°L</button><button type="button" data-c="EBC">EBC</button></div>
+    </div>
+    <div id="malts"></div>
+    <button type="button" class="btn" id="addMalt">+ Add malt</button>
+    <p class="hint">Base = pale, pilsner, Vienna, Munich. Crystal = caramel malts. Roast = chocolate, black, roasted barley.</p>
+
+    <h2>Mash water</h2>
+    <div class="grid">
+      <div class="field">
+        <label for="water">Mash water volume</label>
+        <div class="inline">
+          <input id="water" type="number" inputmode="decimal" step="0.1" min="0" value="4">
+          <select id="waterUnit" aria-label="Volume unit"><option value="gal">US gal</option><option value="L">L</option></select>
+        </div>
+        <span class="hint">Strike water only, not sparge.</span>
+      </div>
+      <div class="field">
+        <label for="ra">Residual alkalinity (mg/L as CaCO₃)</label>
+        <input id="ra" type="number" inputmode="decimal" step="1" value="0">
+        <span class="hint">Can be negative. <button type="button" class="link" id="raToggle">Calculate from my water report</button></span>
+      </div>
+    </div>
+    <div id="raCalc" class="grid three" hidden style="margin-top:12px">
+      <div class="field"><label for="alk">Alkalinity (as CaCO₃)</label><input id="alk" type="number" inputmode="decimal" min="0" value="0"></div>
+      <div class="field"><label for="ca">Calcium, mg/L</label><input id="ca" type="number" inputmode="decimal" min="0" value="0"></div>
+      <div class="field"><label for="mg">Magnesium, mg/L</label><input id="mg" type="number" inputmode="decimal" min="0" value="0"></div>
+      <p class="hint" style="grid-column:1/-1;margin:0">RA = alkalinity − Ca/1.4 − Mg/1.7 (Kolbach)<sup><a href="#fn3">3</a></sup>. Distilled or RO water with no salts has RA 0.</p>
+    </div>
+  </form>
+
+  <section id="out" aria-live="polite"></section>
+
+  <div class="footnotes">
+    <strong>Notes</strong>
+    <ol>
+      <li id="fn1">The model treats each malt as a buffer with its own distilled-water mash pH, weights them by mass, then shifts the result by the water's residual alkalinity: pH = Σ(mass × malt pH) ÷ Σmass + RA(meq) ÷ (38 × kg grain). Malt pH comes from colour: base 5.80 − 0.028 × °L, crystal 5.22 − 0.00504 × °L, roast 4.70. These are approximations of published homebrew measurements (Troester; Palmer &amp; Kaminski, <em>Water</em>). Real malts vary by maltster and lot.</li>
+      <li id="fn2">Full water tools such as Bru'n Water and similar spreadsheets use more inputs — per-malt titration data, acid malt and acid additions, mash thickness effects, and more — and still recommend a meter. The roast-malt figure is the weakest part of this model; for grists heavy in dark malt, expect it may read high.</li>
+      <li id="fn3">Residual alkalinity (Kolbach) is alkalinity minus the pH-lowering effect of calcium and magnesium. With ion concentrations in mg/L: RA = alkalinity − Ca/1.40 − Mg/1.70, derived from Kolbach's hardness divisors 3.5 and 7.</li>
+      <li id="fn4">Target range 5.2–5.6 is for a room-temperature sample, which is how most meters are used and how most guidance is written. A sample read hot shows roughly 0.2–0.3 lower; published figures for the offset vary. Always cool the sample before measuring, which also protects the probe.</li>
+      <li>Homebrewing beer for personal use is legal federally in the US; check your state and local laws.</li>
+    </ol>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">BrewPhase — homebrew water science, minus the guesswork. Product-agnostic; no sponsored ingredients.</div></footer>
+
+<script src="assets/brewphase.js"></script>
+<script>
+(function () {
+  'use strict';
+  var B = window.BrewPhase, $ = function (id) { return document.getElementById(id); };
+  function store(k, v) { try { if (v === undefined) return localStorage.getItem('bp.' + k); localStorage.setItem('bp.' + k, v); } catch (e) { return null; } }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  var wUnit = store('weightUnit') || 'lb', cUnit = store('colorUnit') || 'L';
+  var rows = [
+    { type: 'base', w: 9, c: 2 },
+    { type: 'crystal', w: 0.75, c: 40 }
+  ];
+  if (wUnit === 'kg') rows.forEach(function (r) { r.w = Math.round(B.units.lbToKg(r.w) * 100) / 100; });
+  if (cUnit === 'EBC') rows.forEach(function (r) { r.c = Math.round(B.units.lovibondToEbc(r.c)); });
+
+  function syncSeg() {
+    document.querySelectorAll('[data-w]').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.w === wUnit); });
+    document.querySelectorAll('[data-c]').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.c === cUnit); });
+  }
+  document.querySelectorAll('[data-w]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (b.dataset.w === wUnit) return;
+      readRows();
+      rows.forEach(function (r) { if (isFinite(r.w)) r.w = Math.round((b.dataset.w === 'kg' ? B.units.lbToKg(r.w) : r.w * 1000 / 453.59237) * 100) / 100; });
+      wUnit = b.dataset.w; store('weightUnit', wUnit); render();
+    });
+  });
+  document.querySelectorAll('[data-c]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (b.dataset.c === cUnit) return;
+      readRows();
+      rows.forEach(function (r) { if (isFinite(r.c)) r.c = Math.round(b.dataset.c === 'EBC' ? B.units.lovibondToEbc(r.c) : B.units.ebcToLovibond(r.c)); });
+      cUnit = b.dataset.c; store('colorUnit', cUnit); render();
+    });
+  });
+
+  function readRows() {
+    document.querySelectorAll('.malt-row').forEach(function (el, i) {
+      rows[i].type = el.querySelector('select').value;
+      rows[i].w = parseFloat(el.querySelector('.w').value);
+      rows[i].c = parseFloat(el.querySelector('.c').value);
+    });
+  }
+  function render() {
+    syncSeg();
+    var html = '';
+    rows.forEach(function (r, i) {
+      html += '<div class="malt-row">' +
+        '<div class="field"><label for="t' + i + '">Type</label><select id="t' + i + '">' +
+        ['base', 'crystal', 'roast'].map(function (t) { return '<option value="' + t + '"' + (t === r.type ? ' selected' : '') + '>' + t[0].toUpperCase() + t.slice(1) + '</option>'; }).join('') +
+        '</select></div>' +
+        '<div class="field"><label for="w' + i + '">Weight (' + wUnit + ')</label><input id="w' + i + '" class="w" type="number" inputmode="decimal" min="0" step="0.05" value="' + (isFinite(r.w) ? r.w : '') + '"></div>' +
+        '<div class="field"><label for="c' + i + '">Color (' + (cUnit === 'L' ? '°L' : 'EBC') + ')</label><input id="c' + i + '" class="c" type="number" inputmode="decimal" min="0" step="1" value="' + (isFinite(r.c) ? r.c : '') + '"></div>' +
+        '<button type="button" class="btn rm" data-i="' + i + '" aria-label="Remove malt ' + (i + 1) + '">✕</button></div>';
+    });
+    $('malts').innerHTML = html;
+    $('malts').querySelectorAll('input,select').forEach(function (el) { el.addEventListener('input', function () { readRows(); calc(); }); });
+    $('malts').querySelectorAll('.rm').forEach(function (b) {
+      b.addEventListener('click', function () { readRows(); rows.splice(+b.dataset.i, 1); render(); });
+    });
+    calc();
+  }
+  $('addMalt').addEventListener('click', function () { readRows(); rows.push({ type: 'base', w: NaN, c: NaN }); render(); });
+
+  var wu = store('volUnit'); if (wu) { $('waterUnit').value = wu; if (wu === 'L') $('water').value = 15; }
+  $('waterUnit').addEventListener('change', function () {
+    var v = parseFloat($('water').value);
+    if (isFinite(v)) $('water').value = Math.round((this.value === 'L' ? B.units.galToL(v) : B.units.lToGal(v)) * 100) / 100;
+    store('volUnit', this.value); calc();
+  });
+  var q = new URLSearchParams(location.search);
+  if (q.has('ra') && isFinite(parseFloat(q.get('ra')))) $('ra').value = parseFloat(q.get('ra'));
+  $('raToggle').addEventListener('click', function () { $('raCalc').hidden = !$('raCalc').hidden; if (!$('raCalc').hidden) raFromReport(); });
+  function raFromReport() {
+    var a = parseFloat($('alk').value) || 0, c = parseFloat($('ca').value) || 0, m = parseFloat($('mg').value) || 0;
+    $('ra').value = Math.round(B.residualAlkalinity(a, c, m));
+    calc();
+  }
+  ['alk', 'ca', 'mg'].forEach(function (id) { $(id).addEventListener('input', raFromReport); });
+  ['water', 'ra'].forEach(function (id) { $(id).addEventListener('input', calc); });
+
+  function meter(ph) {
+    var lo = 4.8, hi = 6.2, pct = function (x) { return Math.max(0, Math.min(100, (x - lo) / (hi - lo) * 100)); };
+    return '<div class="meter" role="img" aria-label="Estimated pH ' + ph.toFixed(2) + ' against target 5.2 to 5.6">' +
+      '<div class="band" style="left:' + pct(B.MASH.targetLow) + '%;right:' + (100 - pct(B.MASH.targetHigh)) + '%"></div>' +
+      '<div class="pin" style="left:' + pct(ph) + '%"></div>' +
+      [4.8, 5.2, 5.6, 6.2].map(function (t) { return '<span class="tick" style="left:' + pct(t) + '%">' + t.toFixed(1) + '</span>'; }).join('') + '</div>';
+  }
+
+  function calc() {
+    var toKg = function (w) { return wUnit === 'kg' ? w : B.units.lbToKg(w); };
+    var toL = function (c) { return cUnit === 'L' ? c : B.units.ebcToLovibond(c); };
+    var malts = rows.filter(function (r) { return isFinite(r.w) && r.w > 0 && isFinite(r.c); })
+      .map(function (r) { return { type: r.type, kg: toKg(r.w), lovibond: toL(r.c) }; });
+    var v = parseFloat($('water').value), L = $('waterUnit').value === 'L' ? v : B.units.galToL(v);
+    var r;
+    try { r = B.estimateMashPH({ malts: malts, residualAlkalinity: parseFloat($('ra').value), waterL: L }); }
+    catch (e) { $('out').innerHTML = '<div class="note info">' + esc(e.message.replace('residualAlkalinity', 'Residual alkalinity').replace('waterL', 'Mash water volume')) + '</div>'; return; }
+
+    var status = {
+      'in-range': ['ok', 'Inside the usual 5.2–5.6 target. Confirm with a meter once the mash settles (10–15 minutes in).'],
+      'high': ['warn', 'Above the usual target. Common fixes: lower the water\'s residual alkalinity (calcium chloride or gypsum), use more RO/distilled water, or add food-grade acid in measured steps while checking with a meter.'],
+      'low': ['warn', 'Below the usual target. Common fix: add baking soda in small measured steps, checking with a meter as you go.']
+    }[r.status];
+    var html = '<div class="result"><div class="sub">Estimated mash pH <span class="tag">estimate</span></div>' +
+      '<div class="big">≈ ' + r.ph.toFixed(2) + '</div>' + meter(r.ph) +
+      '<div class="sub">Room-temperature reading<sup><a href="#fn4">4</a></sup>. Verify with a calibrated pH meter.</div></div>' +
+      '<div class="note ' + status[0] + '">' + esc(status[1]) + '</div>' +
+      '<div class="card"><table class="data"><tbody>' +
+      '<tr><td>Grain alone (distilled water)</td><td>' + r.grainPH.toFixed(2) + '</td></tr>' +
+      '<tr><td>Water alkalinity effect</td><td>' + (r.waterShift >= 0 ? '+' : '') + r.waterShift.toFixed(2) + '</td></tr>' +
+      '<tr><td>Mash thickness</td><td>' + r.litresPerKg.toFixed(1) + ' L/kg (' + (r.litresPerKg * 0.479306).toFixed(2) + ' qt/lb)</td></tr>' +
+      '</tbody></table><p class="hint" style="margin-bottom:0">Simplified model<sup><a href="#fn1">1</a></sup>; full tools use more inputs<sup><a href="#fn2">2</a></sup>.</p></div>';
+    r.warnings.forEach(function (w) { html += '<div class="note warn">' + esc(w.text) + '</div>'; });
+    $('out').innerHTML = html;
+  }
+  render();
+})();
+</script>
+</body>
+</html>

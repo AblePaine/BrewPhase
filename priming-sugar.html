@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Priming Sugar Calculator — BrewPhase</title>
+<meta name="description" content="Exact grams of priming sugar for bottle conditioning: target CO₂ volumes, beer volume, and temperature in. Dextrose, table sugar, DME, and honey.">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <a class="brand" href="index.html">Brew<span>Phase</span></a>
+  <nav class="tools" aria-label="Calculators">
+    <a href="priming-sugar.html" aria-current="page">Priming</a>
+    <a href="liquor-builder.html">Liquor</a>
+    <a href="mash-ph.html">Mash pH</a>
+    <a href="chloride-sulfate.html">Cl:SO₄</a>
+    <a href="water-blending.html">Blending</a>
+  </nav>
+</div></header>
+
+<main class="wrap">
+  <h1>Priming sugar calculator</h1>
+  <p class="lede">Tell it how fizzy you want the beer, how much beer you have, and how warm it got. It tells you exactly how much sugar to add.</p>
+
+  <div class="why"><strong>Why temperature matters</strong>
+    Beer already holds some CO₂ when fermentation ends — more if it stayed cool, less if it warmed up. Ignore that and you over- or under-carbonate. This calculator subtracts what's already dissolved, then works out the sugar from the chemistry of fermentation: each gram of glucose yields a fixed amount of CO₂.</div>
+
+  <form class="card" id="form" autocomplete="off" onsubmit="return false">
+    <h2>Carbonation target</h2>
+    <div class="chips" id="styleChips" aria-label="Style guidance"></div>
+    <div class="grid">
+      <div class="field">
+        <label for="vols">Target CO₂ volumes</label>
+        <input id="vols" type="number" inputmode="decimal" step="0.1" min="0.5" value="2.4">
+        <span class="hint">Most ales 2.2–2.7<sup><a href="#fn1">1</a></sup></span>
+      </div>
+      <div class="field full">
+        <label for="sugar">Sugar</label>
+        <select id="sugar"></select>
+        <span class="hint" id="sugarHint"></span>
+      </div>
+    </div>
+
+    <h2>Your beer</h2>
+    <div class="grid">
+      <div class="field">
+        <label for="beer">Beer volume to bottle</label>
+        <div class="inline">
+          <input id="beer" type="number" inputmode="decimal" step="0.1" min="0" value="5">
+          <select id="beerUnit" aria-label="Volume unit"><option value="gal">US gal</option><option value="L">L</option></select>
+        </div>
+        <span class="hint">What actually goes in bottles, not what's in the fermenter.</span>
+      </div>
+      <div class="field">
+        <label for="temp">Warmest beer temperature</label>
+        <div class="inline">
+          <input id="temp" type="number" inputmode="decimal" step="1" value="68">
+          <select id="tempUnit" aria-label="Temperature unit"><option value="F">°F</option><option value="C">°C</option></select>
+        </div>
+        <span class="hint">Highest it reached after fermentation finished<sup><a href="#fn2">2</a></sup></span>
+      </div>
+    </div>
+  </form>
+
+  <section id="out" aria-live="polite"></section>
+
+  <section class="card" id="compare" hidden>
+    <h2>Same carbonation, other sugars</h2>
+    <div class="scroll-x"><table class="data" id="compareTable"></table></div>
+  </section>
+
+  <section class="card">
+    <h2>How to add it</h2>
+    <p>Dissolve the sugar in a cup or two of water, boil a few minutes, cool, and stir it gently into the beer in your bottling bucket. Even mixing matters more than precision to the gram. Bottles carbonate in about two weeks at room temperature.</p>
+  </section>
+
+  <div class="footnotes">
+    <strong>Notes</strong>
+    <ol>
+      <li id="fn1">Carbonation by style is tradition and taste, not physics. Published ranges differ by a few tenths of a volume. Pick what you like to drink.</li>
+      <li id="fn2">Beer holds CO₂ according to the warmest temperature it reached after fermentation, because gas that left doesn't come back when the beer cools again. Residual CO₂ uses the standard solubility fit V = 3.0378 − 0.050062·T + 0.00026555·T² (T in °F, sea-level pressure, valid about 32–80 °F). At high altitude beer holds slightly less CO₂; the difference is usually small next to other variables.</li>
+      <li id="fn3">One CO₂ volume = 1.96 g CO₂ per litre of beer. Fermentation (C₆H₁₂O₆ → 2 C₂H₅OH + 2 CO₂) makes 0.489 g CO₂ per gram of glucose, so each volume takes 4.02 g of glucose per litre. Molar masses come from the shared atomic-weight table. Yeast send a few percent of sugar to growth instead of CO₂; that is within the noise of the other inputs.</li>
+      <li id="fn4">Sugars differ in how much fermentable glucose they deliver per gram. Brewing corn sugar is usually dextrose <em>monohydrate</em> (about 91% glucose by weight); if your package says anhydrous, choose that option. Table sugar splits into two sugars when yeast eat it, delivering about 5% more than its weight. <strong>DME and honey are estimates</strong>: DME's fermentability varies by product (we assume 68% of solids fermentable), and honey's moisture and sugar mix vary by source (we assume 82% sugars, 95% fermentable). For the most predictable result, use dextrose or table sugar.</li>
+      <li id="fn5">BrewPhase warns above 3.5 volumes and will not calculate above 4.0. Over-primed bottles can burst and throw glass. Beers traditionally served above 4 volumes are better force-carbonated or bottled in purpose-rated bottles with guidance specific to them.</li>
+      <li>Homebrewing beer for personal use is legal federally in the US; check your state and local laws, and your country's if you're elsewhere.</li>
+    </ol>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">BrewPhase — homebrew water science, minus the guesswork. Product-agnostic; no sponsored ingredients.</div></footer>
+
+<script src="assets/brewphase.js"></script>
+<script>
+(function () {
+  'use strict';
+  var B = window.BrewPhase, $ = function (id) { return document.getElementById(id); };
+  var SUGAR_ORDER = ['dextrose', 'tableSugar', 'dme', 'honey', 'dextroseAnhydrous'];
+
+  function store(k, v) { try { if (v === undefined) return localStorage.getItem('bp.' + k); localStorage.setItem('bp.' + k, v); } catch (e) { return null; } }
+
+  SUGAR_ORDER.forEach(function (k) {
+    var o = document.createElement('option');
+    o.value = k; o.textContent = B.SUGARS[k].name + (B.SUGARS[k].flag ? ' — estimate' : '');
+    $('sugar').appendChild(o);
+  });
+  B.CARB_STYLES.forEach(function (s) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    var mid = Math.round((s.low + s.high) / 2 * 10) / 10;
+    b.textContent = s.style + ' · ' + s.low.toFixed(1) + '–' + s.high.toFixed(1);
+    b.addEventListener('click', function () { $('vols').value = Math.min(mid, B.PRIMING.refuseAbove); calc(); });
+    $('styleChips').appendChild(b);
+  });
+
+  ['beerUnit', 'tempUnit', 'sugar'].forEach(function (id) {
+    var v = store(id); if (v) $(id).value = v;
+  });
+  // Keep the displayed value meaningful when the unit flips.
+  var lastBeerUnit = $('beerUnit').value, lastTempUnit = $('tempUnit').value;
+  if (lastBeerUnit === 'L') $('beer').value = 19;
+  if (lastTempUnit === 'C') $('temp').value = 20;
+  $('beerUnit').addEventListener('change', function () {
+    var v = parseFloat($('beer').value);
+    if (isFinite(v)) $('beer').value = round(this.value === 'L' ? B.units.galToL(v) : B.units.lToGal(v), 2);
+    lastBeerUnit = this.value; store('beerUnit', this.value); calc();
+  });
+  $('tempUnit').addEventListener('change', function () {
+    var v = parseFloat($('temp').value);
+    if (isFinite(v)) $('temp').value = round(this.value === 'C' ? B.units.fToC(v) : B.units.cToF(v), 1);
+    lastTempUnit = this.value; store('tempUnit', this.value); calc();
+  });
+  $('sugar').addEventListener('change', function () { store('sugar', this.value); calc(); });
+  ['vols', 'beer', 'temp'].forEach(function (id) { $(id).addEventListener('input', calc); });
+
+  function round(x, d) { var f = Math.pow(10, d); return Math.round(x * f) / f; }
+  function fmtG(g) { return g >= 100 ? g.toFixed(0) : g >= 10 ? g.toFixed(1) : g.toFixed(2); }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function note(kind, text) { return '<div class="note ' + kind + '">' + esc(text) + '</div>'; }
+
+  function inputs() {
+    var beer = parseFloat($('beer').value), temp = parseFloat($('temp').value);
+    return {
+      targetVolumes: parseFloat($('vols').value),
+      beerL: $('beerUnit').value === 'L' ? beer : B.units.galToL(beer),
+      tempF: $('tempUnit').value === 'F' ? temp : B.units.cToF(temp),
+      sugar: $('sugar').value
+    };
+  }
+
+  function calc() {
+    var sugar = B.SUGARS[$('sugar').value];
+    $('sugarHint').innerHTML = sugar.flag ? 'Fermentability varies — estimate<sup><a href="#fn4">4</a></sup>' : 'Consistent fermentability<sup><a href="#fn4">4</a></sup>';
+    var inp = inputs(), r;
+    $('compare').hidden = true;
+    try { r = B.primingSugar(inp); }
+    catch (e) { $('out').innerHTML = note('info', 'Enter ' + e.message.replace(/ must.*/, '').toLowerCase() + ' to see a result.'); return; }
+
+    if (r.status === 'refused') {
+      $('out').innerHTML = '<div class="result" style="background:var(--bad-soft)"><div class="big" style="font-size:1.6rem">Not calculated</div>' +
+        '<p class="sub">' + esc(r.warnings[0].text) + '<sup><a href="#fn5">5</a></sup></p>' +
+        '<p class="sub">Choose ' + B.PRIMING.refuseAbove.toFixed(1) + ' volumes or less, or force-carbonate in a keg.</p></div>';
+      return;
+    }
+    var html = '';
+    if (r.status === 'none') {
+      html = '<div class="result"><div class="big">0 <small>g</small></div><p class="sub">No sugar needed.</p></div>';
+    } else {
+      var bottles12 = r.grams / inp.beerL * 0.355, bottles500 = r.grams / inp.beerL * 0.5;
+      html = '<div class="result">' +
+        '<div class="sub">' + esc(sugar.name) + (sugar.flag ? ' <span class="tag">estimate</span>' : '') + '</div>' +
+        '<div class="big">' + fmtG(r.grams) + ' <small>g</small></div>' +
+        '<div class="sub">' + B.units.gToOz(r.grams).toFixed(2) + ' oz · ' + r.gramsPerLitre.toFixed(2) + ' g per litre</div>' +
+        '<div class="sub">Priming bottle by bottle: ' + bottles12.toFixed(2) + ' g per 12 oz (355 mL) · ' + bottles500.toFixed(2) + ' g per 500 mL</div>' +
+        '</div>';
+    }
+    html += '<div class="card"><table class="data"><tbody>' +
+      '<tr><td>Already in the beer<sup><a href="#fn2">2</a></sup></td><td>' + r.residual.toFixed(2) + ' vol</td></tr>' +
+      '<tr><td>Target</td><td>' + r.target.toFixed(2) + ' vol</td></tr>' +
+      '<tr><td>CO₂ to create</td><td>' + Math.max(0, r.addVolumes).toFixed(2) + ' vol</td></tr>' +
+      (r.glucoseG ? '<tr><td>Fermentable glucose needed<sup><a href="#fn3">3</a></sup></td><td>' + fmtG(r.glucoseG) + ' g</td></tr>' : '') +
+      '</tbody></table></div>';
+    r.warnings.forEach(function (w) { html += note(w.code === 'high' ? 'bad' : w.code === 'already' ? 'ok' : 'warn', w.text); });
+    $('out').innerHTML = html;
+
+    if (r.status !== 'none') {
+      var rows = '<thead><tr><th>Sugar</th><th>Grams</th><th>Ounces</th></tr></thead><tbody>';
+      SUGAR_ORDER.forEach(function (k) {
+        var x = B.primingSugar({ targetVolumes: inp.targetVolumes, beerL: inp.beerL, tempF: inp.tempF, sugar: k });
+        rows += '<tr' + (k === inp.sugar ? ' style="font-weight:700"' : '') + '><td>' + esc(B.SUGARS[k].name) +
+          (B.SUGARS[k].flag ? ' <span class="tag">est.</span>' : '') + '</td><td>' + fmtG(x.grams) + '</td><td>' + B.units.gToOz(x.grams).toFixed(2) + '</td></tr>';
+      });
+      $('compareTable').innerHTML = rows + '</tbody>';
+      $('compare').hidden = false;
+    }
+  }
+  calc();
+})();
+</script>
+</body>
+</html>

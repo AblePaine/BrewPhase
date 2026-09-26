@@ -1,0 +1,8 @@
+{
+  "name": "brewphase",
+  "private": true,
+  "description": "BrewPhase — homebrew water chemistry calculators. Static site; no build step, no dependencies.",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  }
+}

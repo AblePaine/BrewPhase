@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brewing Liquor Builder — BrewPhase</title>
+<meta name="description" content="Build brewing water from distilled or RO: target calcium, magnesium, sodium, chloride, sulfate and alkalinity in, grams of each brewing salt out.">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <a class="brand" href="index.html">Brew<span>Phase</span></a>
+  <nav class="tools" aria-label="Calculators">
+    <a href="priming-sugar.html">Priming</a>
+    <a href="liquor-builder.html" aria-current="page">Liquor</a>
+    <a href="mash-ph.html">Mash pH</a>
+    <a href="chloride-sulfate.html">Cl:SO₄</a>
+    <a href="water-blending.html">Blending</a>
+  </nav>
+</div></header>
+
+<main class="wrap">
+  <h1>Brewing liquor builder</h1>
+  <p class="lede">Start from distilled or RO water. Enter the mineral profile you want. Get the grams of each salt to add.</p>
+
+  <div class="why"><strong>Why build from scratch</strong>
+    Tap water changes with the season and the report is rarely current. Distilled or RO water is a blank page: every mineral in the final water is one you put there, so the numbers below are exactly what you get.</div>
+
+  <form class="card" autocomplete="off" onsubmit="return false">
+    <h2>Batch</h2>
+    <div class="grid">
+      <div class="field">
+        <label for="vol">Total brewing water</label>
+        <div class="inline">
+          <input id="vol" type="number" inputmode="decimal" step="0.1" min="0" value="8">
+          <select id="volUnit" aria-label="Volume unit"><option value="gal">US gal</option><option value="L">L</option></select>
+        </div>
+        <span class="hint">Mash plus sparge water, all of it treated the same.</span>
+      </div>
+    </div>
+
+    <h2>Target profile (mg/L)</h2>
+    <div class="chips" id="presets" aria-label="Starting profiles"></div>
+    <div class="grid three">
+      <div class="field"><label for="ca">Calcium, Ca</label><input id="ca" type="number" inputmode="decimal" min="0" step="1"></div>
+      <div class="field"><label for="mg">Magnesium, Mg</label><input id="mg" type="number" inputmode="decimal" min="0" step="1"></div>
+      <div class="field"><label for="na">Sodium, Na</label><input id="na" type="number" inputmode="decimal" min="0" step="1"></div>
+      <div class="field"><label for="cl">Chloride, Cl</label><input id="cl" type="number" inputmode="decimal" min="0" step="1"></div>
+      <div class="field"><label for="so4">Sulfate, SO₄</label><input id="so4" type="number" inputmode="decimal" min="0" step="1"></div>
+      <div class="field"><label for="alk">Alkalinity<sup><a href="#fn2">2</a></sup></label><input id="alk" type="number" inputmode="decimal" min="0" step="1"></div>
+    </div>
+    <p class="hint">Alkalinity is mg/L as CaCO₃ — the unit most water reports use.</p>
+  </form>
+
+  <section id="out" aria-live="polite"></section>
+
+  <div class="footnotes">
+    <strong>Notes</strong>
+    <ol>
+      <li id="fn1">How the salts are solved: Epsom salt is the only magnesium source, baking soda the only sodium source, and calcium chloride the only chloride source, so those three are fixed by your targets. Gypsum then supplies whatever sulfate Epsom didn't; chalk supplies whatever alkalinity baking soda didn't. Calcium comes from gypsum, calcium chloride and chalk together, so it's a result rather than a separate dial — the table shows both your target and what you'll actually get. Molar masses use the shared atomic-weight table and the hydrated salt forms named above.</li>
+      <li id="fn2">Alkalinity is entered as mg/L as CaCO₃. Bicarbonate (HCO₃⁻) ppm = alkalinity × 61.016 ÷ 50.043, valid when water pH is below about 8.3, which is true for water built this way.</li>
+      <li id="fn3">Chalk (CaCO₃) is contested. It barely dissolves in plain water, and even stirred into the mash it typically delivers noticeably less alkalinity than theory — estimates of how much less vary widely. Many brewers use baking soda instead when they need alkalinity. Its result here is the full theoretical value.</li>
+      <li id="fn4">Starting profiles are common homebrew starting points, not rules. Adjust to taste.</li>
+      <li>Weigh salts on a scale that reads to 0.1 g or better; teaspoon conversions vary too much with grind and packing to be exact. Homebrewing beer for personal use is legal federally in the US; check your state and local laws.</li>
+    </ol>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">BrewPhase — homebrew water science, minus the guesswork. Product-agnostic; no sponsored ingredients.</div></footer>
+
+<script src="assets/brewphase.js"></script>
+<script>
+(function () {
+  'use strict';
+  var B = window.BrewPhase, $ = function (id) { return document.getElementById(id); };
+  var IONS = ['ca', 'mg', 'na', 'cl', 'so4', 'alk'];
+  var LABEL = { ca: 'Calcium', mg: 'Magnesium', na: 'Sodium', cl: 'Chloride', so4: 'Sulfate', alk: 'Alkalinity (as CaCO₃)', hco3: 'Bicarbonate, HCO₃' };
+  // Calcium in each preset is the value the other five targets produce, so
+  // presets solve cleanly (see tests/liquor.test.js).
+  var PRESETS = [
+    { name: 'Pale & hoppy', p: { ca: 83, mg: 5, na: 0, cl: 50, so4: 150, alk: 0 } },
+    { name: 'Balanced', p: { ca: 65, mg: 5, na: 0, cl: 75, so4: 75, alk: 0 } },
+    { name: 'Amber & malty', p: { ca: 69, mg: 5, na: 15, cl: 100, so4: 50, alk: 32 } },
+    { name: 'Dark & roasty', p: { ca: 61, mg: 10, na: 30, cl: 100, so4: 50, alk: 65 } }
+  ];
+  function store(k, v) { try { if (v === undefined) return localStorage.getItem('bp.' + k); localStorage.setItem('bp.' + k, v); } catch (e) { return null; } }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function fmtG(g) { return g === 0 ? '0' : g < 10 ? g.toFixed(2) : g.toFixed(1); }
+
+  PRESETS.forEach(function (pr) {
+    var b = document.createElement('button'); b.type = 'button'; b.textContent = pr.name;
+    b.addEventListener('click', function () { setProfile(pr.p); calc(); });
+    $('presets').appendChild(b);
+  });
+  var fn = document.createElement('sup'); fn.innerHTML = '<a href="#fn4">4</a>'; $('presets').appendChild(fn);
+  function setProfile(p) { IONS.forEach(function (k) { $(k).value = p[k]; }); }
+  setProfile(PRESETS[1].p);
+
+  var u = store('volUnit'); if (u) { $('volUnit').value = u; if (u === 'L') $('vol').value = 30; }
+  $('volUnit').addEventListener('change', function () {
+    var v = parseFloat($('vol').value);
+    if (isFinite(v)) $('vol').value = Math.round((this.value === 'L' ? B.units.galToL(v) : B.units.lToGal(v)) * 100) / 100;
+    store('volUnit', this.value); calc();
+  });
+  ['vol'].concat(IONS).forEach(function (id) { $(id).addEventListener('input', calc); });
+
+  function calc() {
+    var v = parseFloat($('vol').value), L = $('volUnit').value === 'L' ? v : B.units.galToL(v);
+    var t = {}; IONS.forEach(function (k) { var x = parseFloat($(k).value); t[k] = isFinite(x) ? x : 0; });
+    var r;
+    try { r = B.buildLiquor(t, L); }
+    catch (e) { $('out').innerHTML = '<div class="note info">' + esc(e.message.replace('volumeL', 'Water volume')) + '</div>'; return; }
+
+    var html = '<div class="result"><div class="sub">Add to ' + esc($('vol').value + ' ' + ($('volUnit').value === 'L' ? 'L' : 'US gal')) + ' of distilled/RO water</div>' +
+      '<table class="data" style="margin-top:8px"><thead><tr><th>Salt<sup><a href="#fn1">1</a></sup></th><th>Grams</th></tr></thead><tbody>';
+    B.SALT_ORDER.forEach(function (k) {
+      var s = B.SALTS[k];
+      html += '<tr><td>' + esc(s.name) + ' <span class="hint">' + esc(s.formula) + '</span>' + (k === 'chalk' ? '<sup><a href="#fn3">3</a></sup>' : '') +
+        '</td><td style="font-size:1.15rem;font-weight:700">' + fmtG(r.grams[k]) + ' g</td></tr>';
+    });
+    html += '</tbody></table></div>';
+
+    html += '<div class="card"><h3>Resulting water (mg/L)</h3><div class="scroll-x"><table class="data"><thead><tr><th>Ion</th><th>Target</th><th>Result</th></tr></thead><tbody>';
+    IONS.forEach(function (k) {
+      var off = Math.abs(r.result[k] - r.target[k]) > Math.max(1, 0.05 * r.target[k]);
+      html += '<tr><td>' + LABEL[k] + '</td><td>' + r.target[k].toFixed(0) + '</td><td' + (off ? ' style="color:var(--warn);font-weight:700"' : '') + '>' + r.result[k].toFixed(1) + '</td></tr>';
+    });
+    html += '<tr><td>' + LABEL.hco3 + '<sup><a href="#fn2">2</a></sup></td><td>—</td><td>' + r.result.hco3.toFixed(1) + '</td></tr>';
+    var ra = B.residualAlkalinity(r.result.alk, r.result.ca, r.result.mg);
+    html += '<tr><td>Residual alkalinity (as CaCO₃)</td><td>—</td><td>' + ra.toFixed(0) + '</td></tr>';
+    html += '</tbody></table></div>';
+    var cs = B.chlorideSulfate(r.result.cl, r.result.so4);
+    html += '<p class="hint" style="margin-top:10px">' +
+      (cs.ratio !== null && isFinite(cs.ratio) ? 'Cl:SO₄ ratio ' + cs.ratio.toFixed(2) + ' (' + esc(cs.band.label.toLowerCase()) + '). ' : '') +
+      '<a href="chloride-sulfate.html?cl=' + r.result.cl.toFixed(0) + '&amp;so4=' + r.result.so4.toFixed(0) + '">Check the ratio →</a> · ' +
+      '<a href="mash-ph.html?ra=' + ra.toFixed(0) + '">Estimate mash pH with this water →</a></p></div>';
+    r.warnings.forEach(function (w) { html += '<div class="note warn">' + esc(w.text) + (w.code === 'chalk' ? '<sup><a href="#fn3">3</a></sup>' : '') + '</div>'; });
+    $('out').innerHTML = html;
+  }
+  calc();
+})();
+</script>
+</body>
+</html>

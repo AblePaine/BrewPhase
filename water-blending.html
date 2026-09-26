@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Water Blending Calculator — BrewPhase</title>
+<meta name="description" content="Blend tap water with distilled or RO water: pick a ratio and see the resulting mineral profile, or solve for the ratio that hits a target on one ion.">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <a class="brand" href="index.html">Brew<span>Phase</span></a>
+  <nav class="tools" aria-label="Calculators">
+    <a href="priming-sugar.html">Priming</a>
+    <a href="liquor-builder.html">Liquor</a>
+    <a href="mash-ph.html">Mash pH</a>
+    <a href="chloride-sulfate.html">Cl:SO₄</a>
+    <a href="water-blending.html" aria-current="page">Blending</a>
+  </nav>
+</div></header>
+
+<main class="wrap">
+  <h1>Water blending</h1>
+  <p class="lede">Cut your tap water with distilled or RO water. Choose a ratio and see the result, or name a target for one mineral and get the ratio that hits it.</p>
+
+  <div class="why"><strong>Why blend</strong>
+    If your tap water is too hard or too alkaline for a pale beer, diluting it is the simplest fix: every mineral drops in proportion. It's cheaper than going all-RO and keeps some of the character of your local water.</div>
+
+  <form class="card" autocomplete="off" onsubmit="return false">
+    <h2>Your tap water (mg/L)</h2>
+    <p class="hint" style="margin-top:0">From your water report or a lab test<sup><a href="#fn2">2</a></sup>.</p>
+    <div class="grid three" id="tapFields"></div>
+
+    <details style="margin-top:14px">
+      <summary class="label" style="cursor:pointer">Diluent: distilled (all zero) — edit if using RO<sup><a href="#fn3">3</a></sup></summary>
+      <div class="grid three" id="dilFields" style="margin-top:10px"></div>
+    </details>
+
+    <h2>Blend</h2>
+    <div class="seg" role="group" aria-label="Mode" style="margin-bottom:12px">
+      <button type="button" data-mode="ratio" aria-pressed="true">Choose a ratio</button>
+      <button type="button" data-mode="solve" aria-pressed="false">Hit a target</button>
+    </div>
+    <div class="grid">
+      <div class="field" id="ratioBox">
+        <label for="pct">Tap water share (%)</label>
+        <input id="pct" type="number" inputmode="decimal" min="0" max="100" step="1" value="50">
+        <input id="pctRange" type="range" min="0" max="100" step="1" value="50" aria-label="Tap water share slider">
+      </div>
+      <div class="field full" id="solveBox" hidden>
+        <label for="ion">Target mineral</label>
+        <div class="inline">
+          <select id="ion"></select>
+          <input id="target" type="number" inputmode="decimal" min="0" step="1" value="50" aria-label="Target value, mg/L">
+        </div>
+        <span class="hint">mg/L in the finished blend</span>
+      </div>
+      <div class="field">
+        <label for="vol">Total water needed</label>
+        <div class="inline">
+          <input id="vol" type="number" inputmode="decimal" min="0" step="0.1" value="8">
+          <select id="volUnit" aria-label="Volume unit"><option value="gal">US gal</option><option value="L">L</option></select>
+        </div>
+      </div>
+    </div>
+  </form>
+
+  <section id="out" aria-live="polite"></section>
+
+  <div class="footnotes">
+    <strong>Notes</strong>
+    <ol>
+      <li id="fn1">Blending is a straight mass balance: blend = tap share × tap + diluent share × diluent, for every ion. Solving for one ion: tap share = (target − diluent) ÷ (tap − diluent). The answer is exact for the numbers you enter; it can only land between the diluent and tap values.</li>
+      <li id="fn2">Utility reports are often annual averages and can differ from what's in your tap today, especially where the supply switches sources seasonally. A recent lab test is more reliable. Remove chlorine or chloramine (for example with a campden tablet) whatever you blend.</li>
+      <li id="fn3">Distilled water is effectively zero for all of these. RO output usually carries a little of everything — often single-digit to low double-digit mg/L, depending on the membrane and your source water. If you have a reading, enter it.</li>
+      <li>Alkalinity is mg/L as CaCO₃; bicarbonate = alkalinity × 1.22. Homebrewing beer for personal use is legal federally in the US; check your state and local laws.</li>
+    </ol>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">BrewPhase — homebrew water science, minus the guesswork. Product-agnostic; no sponsored ingredients.</div></footer>
+
+<script src="assets/brewphase.js"></script>
+<script>
+(function () {
+  'use strict';
+  var B = window.BrewPhase, $ = function (id) { return document.getElementById(id); };
+  var IONS = B.BLEND_IONS;
+  var LABEL = { ca: 'Calcium, Ca', mg: 'Magnesium, Mg', na: 'Sodium, Na', cl: 'Chloride, Cl', so4: 'Sulfate, SO₄', alk: 'Alkalinity (CaCO₃)' };
+  var TAP_DEFAULT = { ca: 80, mg: 15, na: 25, cl: 40, so4: 60, alk: 180 };
+  var SHORT = { ca: 'Calcium', mg: 'Magnesium', na: 'Sodium', cl: 'Chloride', so4: 'Sulfate', alk: 'Alkalinity' };
+  var mode = 'ratio';
+  function store(k, v) { try { if (v === undefined) return localStorage.getItem('bp.' + k); localStorage.setItem('bp.' + k, v); } catch (e) { return null; } }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  var saved = null; try { saved = JSON.parse(store('tapProfile') || 'null'); } catch (e) { saved = null; }
+  IONS.forEach(function (k) {
+    $('tapFields').insertAdjacentHTML('beforeend', '<div class="field"><label for="tap_' + k + '">' + LABEL[k] + '</label><input id="tap_' + k + '" type="number" inputmode="decimal" min="0" step="1" value="' + ((saved && isFinite(saved[k])) ? saved[k] : TAP_DEFAULT[k]) + '"></div>');
+    $('dilFields').insertAdjacentHTML('beforeend', '<div class="field"><label for="dil_' + k + '">' + LABEL[k] + '</label><input id="dil_' + k + '" type="number" inputmode="decimal" min="0" step="1" value="0"></div>');
+    var o = document.createElement('option'); o.value = k; o.textContent = SHORT[k]; $('ion').appendChild(o);
+  });
+  $('ion').value = 'alk';
+
+  document.querySelectorAll('[data-mode]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      mode = b.dataset.mode;
+      document.querySelectorAll('[data-mode]').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
+      $('ratioBox').hidden = mode !== 'ratio'; $('solveBox').hidden = mode !== 'solve';
+      calc();
+    });
+  });
+  $('pctRange').addEventListener('input', function () { $('pct').value = this.value; calc(); });
+  $('pct').addEventListener('input', function () { $('pctRange').value = this.value; calc(); });
+  var u = store('volUnit'); if (u) { $('volUnit').value = u; if (u === 'L') $('vol').value = 30; }
+  $('volUnit').addEventListener('change', function () {
+    var v = parseFloat($('vol').value);
+    if (isFinite(v)) $('vol').value = Math.round((this.value === 'L' ? B.units.galToL(v) : B.units.lToGal(v)) * 100) / 100;
+    store('volUnit', this.value); calc();
+  });
+  document.querySelectorAll('input:not(#pct):not(#pctRange), select:not(#volUnit)').forEach(function (el) { el.addEventListener('input', calc); });
+
+  function read(prefix) { var p = {}; IONS.forEach(function (k) { var v = parseFloat($(prefix + k).value); p[k] = isFinite(v) && v >= 0 ? v : 0; }); return p; }
+  function fmtVol(L) { return $('volUnit').value === 'L' ? L.toFixed(1) + ' L' : B.units.lToGal(L).toFixed(2) + ' gal'; }
+
+  function calc() {
+    var tap = read('tap_'), dil = read('dil_'), f, html = '';
+    store('tapProfile', JSON.stringify(tap));
+    if (mode === 'ratio') {
+      var pct = parseFloat($('pct').value);
+      if (!isFinite(pct) || pct < 0 || pct > 100) { $('out').innerHTML = '<div class="note info">Tap share must be between 0 and 100%.</div>'; return; }
+      f = pct / 100;
+    } else {
+      var ion = $('ion').value, target = parseFloat($('target').value);
+      if (!isFinite(target)) { $('out').innerHTML = '<div class="note info">Enter a target value.</div>'; return; }
+      var s = B.solveBlend(tap[ion], dil[ion], target);
+      if (!s.ok) { $('out').innerHTML = '<div class="note bad">' + esc(s.reason) + '</div>'; return; }
+      f = s.tapFraction;
+    }
+    var mix = B.blendProfile(tap, dil, f);
+    var v = parseFloat($('vol').value), L = $('volUnit').value === 'L' ? v : B.units.galToL(v);
+    html += '<div class="result"><div class="sub">' + (mode === 'solve' ? 'To hit ' + esc($('target').value) + ' mg/L ' + esc(SHORT[$('ion').value].toLowerCase()) : 'Blend') + '</div>' +
+      '<div class="big">' + (f * 100).toFixed(1) + '% <small>tap</small></div>' +
+      '<div class="sub">' + (100 - f * 100).toFixed(1) + '% distilled/RO' + (mode === 'solve' ? ' · ratio about 1 : ' + (f > 0 ? ((1 - f) / f).toFixed(2) : '∞') + ' (tap : diluent)' : '') + '</div>';
+    if (isFinite(L) && L > 0) html += '<div class="sub" style="margin-top:6px;font-weight:600;color:var(--ink)">' + fmtVol(L * f) + ' tap + ' + fmtVol(L * (1 - f)) + ' distilled/RO</div>';
+    html += '</div>';
+    html += '<div class="card"><h3>Resulting profile (mg/L)<sup><a href="#fn1">1</a></sup></h3><div class="scroll-x"><table class="data"><thead><tr><th>Ion</th><th>Tap</th><th>Diluent</th><th>Blend</th></tr></thead><tbody>';
+    IONS.forEach(function (k) { html += '<tr><td>' + LABEL[k] + '</td><td>' + tap[k] + '</td><td>' + dil[k] + '</td><td><strong>' + mix[k].toFixed(1) + '</strong></td></tr>'; });
+    var ra = B.residualAlkalinity(mix.alk, mix.ca, mix.mg);
+    html += '<tr><td>Bicarbonate, HCO₃</td><td>' + B.alkToHco3(tap.alk).toFixed(0) + '</td><td>' + B.alkToHco3(dil.alk).toFixed(0) + '</td><td>' + mix.hco3.toFixed(1) + '</td></tr>';
+    html += '<tr><td>Residual alkalinity</td><td>' + B.residualAlkalinity(tap.alk, tap.ca, tap.mg).toFixed(0) + '</td><td>' + B.residualAlkalinity(dil.alk, dil.ca, dil.mg).toFixed(0) + '</td><td>' + ra.toFixed(0) + '</td></tr>';
+    html += '</tbody></table></div><p class="hint">' +
+      '<a href="chloride-sulfate.html?cl=' + mix.cl.toFixed(0) + '&amp;so4=' + mix.so4.toFixed(0) + '">Check Cl:SO₄ →</a> · ' +
+      '<a href="mash-ph.html?ra=' + ra.toFixed(0) + '">Estimate mash pH with this water →</a></p></div>';
+    $('out').innerHTML = html;
+  }
+  calc();
+})();
+</script>
+</body>
+</html>

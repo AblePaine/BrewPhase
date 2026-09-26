@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chloride to Sulfate Ratio — BrewPhase</title>
+<meta name="description" content="Chloride-to-sulfate ratio from your water profile, what it means for malt and hop balance, and how it compares to typical style ranges.">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <a class="brand" href="index.html">Brew<span>Phase</span></a>
+  <nav class="tools" aria-label="Calculators">
+    <a href="priming-sugar.html">Priming</a>
+    <a href="liquor-builder.html">Liquor</a>
+    <a href="mash-ph.html">Mash pH</a>
+    <a href="chloride-sulfate.html" aria-current="page">Cl:SO₄</a>
+    <a href="water-blending.html">Blending</a>
+  </nav>
+</div></header>
+
+<main class="wrap">
+  <h1>Chloride : sulfate ratio</h1>
+  <p class="lede">Enter chloride and sulfate from your water. See which way the water leans — malty or bitter — and how that compares to the style you're brewing.</p>
+
+  <div class="why"><strong>Why this ratio</strong>
+    Chloride tends to make beer taste rounder and fuller; sulfate tends to make hop bitterness crisper and drier. Comparing the two is a quick way to see which direction your water will push the beer. It's a seasoning, not a recipe: yeast, malt and hops matter more.</div>
+
+  <form class="card" autocomplete="off" onsubmit="return false">
+    <div class="grid">
+      <div class="field"><label for="cl">Chloride, Cl (mg/L)</label><input id="cl" type="number" inputmode="decimal" min="0" step="1" value="75"></div>
+      <div class="field"><label for="so4">Sulfate, SO₄ (mg/L)</label><input id="so4" type="number" inputmode="decimal" min="0" step="1" value="75"></div>
+      <div class="field full"><label for="style">Compare to a style</label><select id="style"></select></div>
+    </div>
+  </form>
+
+  <section id="out" aria-live="polite"></section>
+
+  <section class="card">
+    <h2>Typical ranges by style<sup><a href="#fn1">1</a></sup></h2>
+    <div class="scroll-x"><table class="data" id="styles"></table></div>
+  </section>
+
+  <div class="footnotes">
+    <strong>Notes</strong>
+    <ol>
+      <li id="fn1">Style ranges and the malty ↔ bitter labels are guidance drawn from common homebrew practice (e.g. Palmer &amp; Kaminski, <em>Water</em>, and widely shared charts). They are not rules; different sources draw the lines a few tenths apart.</li>
+      <li id="fn2">The ratio is contested. Some water specialists argue the absolute amounts matter more than the ratio — 50:100 and 150:300 have the same ratio but taste very different. Keep sulfate and chloride in sensible absolute ranges as well. BrewPhase flags the ratio as unreliable when chloride plus sulfate is under 50 mg/L.</li>
+      <li id="fn3">Ratio is by mass (mg/L ÷ mg/L), the way homebrew sources quote it. Some texts use a sulfate:chloride ratio instead; that is simply the inverse.</li>
+      <li>Homebrewing beer for personal use is legal federally in the US; check your state and local laws.</li>
+    </ol>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">BrewPhase — homebrew water science, minus the guesswork. Product-agnostic; no sponsored ingredients.</div></footer>
+
+<script src="assets/brewphase.js"></script>
+<script>
+(function () {
+  'use strict';
+  var B = window.BrewPhase, $ = function (id) { return document.getElementById(id); };
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  var q = new URLSearchParams(location.search);
+  ['cl', 'so4'].forEach(function (k) { if (q.has(k) && isFinite(parseFloat(q.get(k)))) $(k).value = parseFloat(q.get(k)); });
+  var none = document.createElement('option'); none.value = ''; none.textContent = '— none —'; $('style').appendChild(none);
+  B.STYLE_RATIOS.forEach(function (s, i) {
+    var o = document.createElement('option'); o.value = i; o.textContent = s.style + ' (' + s.low + '–' + s.high + ')'; $('style').appendChild(o);
+  });
+  ['cl', 'so4', 'style'].forEach(function (id) { $(id).addEventListener('input', calc); });
+
+  // Log scale 0.1 .. 10 so 0.5 and 2 sit symmetrically around 1.
+  var LO = Math.log10(0.1), HI = Math.log10(10);
+  function pct(x) { return Math.max(0, Math.min(100, (Math.log10(Math.max(x, 1e-6)) - LO) / (HI - LO) * 100)); }
+
+  function calc() {
+    var cl = parseFloat($('cl').value), so4 = parseFloat($('so4').value), r;
+    try { r = B.chlorideSulfate(cl, so4); }
+    catch (e) { $('out').innerHTML = '<div class="note info">Enter chloride and sulfate to see the ratio.</div>'; renderStyles(null); return; }
+    if (r.ratio === null) { $('out').innerHTML = '<div class="note info">Both are zero — there is no ratio to speak of.</div>'; renderStyles(null); return; }
+    var st = $('style').value === '' ? null : B.STYLE_RATIOS[+$('style').value];
+    var ratioTxt = isFinite(r.ratio) ? r.ratio.toFixed(2) : '∞';
+    var html = '<div class="result"><div class="sub">Cl : SO₄<sup><a href="#fn3">3</a></sup></div>' +
+      '<div class="big">' + ratioTxt + '</div>' +
+      '<div style="font-weight:700;margin-top:4px">' + esc(r.band.label) + '</div><div class="sub">' + esc(r.band.note) + '</div>' +
+      '<div class="meter" role="img" aria-label="Ratio ' + ratioTxt + ' on a scale from bitter to malty">' +
+      '<span class="end" style="left:0">← bitter</span><span class="end" style="right:0">malty →</span>' +
+      (st ? '<div class="band" style="left:' + pct(st.low) + '%;right:' + (100 - pct(st.high)) + '%"></div>' : '') +
+      '<div class="pin" style="left:' + pct(r.ratio) + '%"></div>' +
+      [0.1, 0.5, 1, 2, 10].map(function (t) { return '<span class="tick" style="left:' + pct(t) + '%">' + t + '</span>'; }).join('') + '</div>';
+    if (st) {
+      var fit = B.styleFit(r.ratio, st);
+      html += '<div class="sub">' + esc(st.style) + ': ' + st.low + '–' + st.high + ' — your water is <strong>' +
+        (fit === 'within' ? 'within range' : fit === 'below' ? 'more bitter-leaning than typical' : 'more malt-leaning than typical') + '</strong>.</div>';
+    }
+    html += '</div>';
+    if (r.lowTotal) html += '<div class="note warn">Chloride plus sulfate is under ' + B.LOW_TOTAL + ' mg/L. At levels this low neither ion does much, so the ratio tells you little<sup><a href="#fn2">2</a></sup>.</div>';
+    if (so4 > 400) html += '<div class="note warn">Sulfate above about 400 mg/L can taste harsh or minerally even in very hoppy beers<sup><a href="#fn1">1</a></sup>.</div>';
+    if (cl > 200) html += '<div class="note warn">Chloride above about 200 mg/L can start to taste salty or minerally<sup><a href="#fn1">1</a></sup>.</div>';
+    $('out').innerHTML = html;
+    renderStyles(r.ratio);
+  }
+
+  function renderStyles(ratio) {
+    var h = '<thead><tr><th>Style</th><th>Range</th>' + (ratio !== null ? '<th>Your water</th>' : '') + '</tr></thead><tbody>';
+    B.STYLE_RATIOS.forEach(function (s) {
+      var fit = B.styleFit(ratio, s);
+      h += '<tr><td>' + esc(s.style) + '</td><td>' + s.low + '–' + s.high + '</td>' +
+        (ratio !== null ? '<td style="color:' + (fit === 'within' ? 'var(--ok)' : 'var(--ink-2)') + '">' + (fit === 'within' ? '✓ fits' : fit === 'below' ? 'more bitter' : 'more malty') + '</td>' : '') + '</tr>';
+    });
+    $('styles').innerHTML = h + '</tbody>';
+  }
+  calc();
+})();
+</script>
+</body>
+</html>
