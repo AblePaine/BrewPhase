@@ -28,7 +28,10 @@
   // ---------------------------------------------------------------------
   var AW = Object.freeze({
     N: 14.007, O: 15.999, Na: 22.990, K: 39.098, Mg: 24.305,
-    Ca: 40.078, S: 32.06, C: 12.011, H: 1.008, Cl: 35.45
+    Ca: 40.078, S: 32.06, C: 12.011, H: 1.008, Cl: 35.45,
+    // P added 2026-11 for engine 6: phosphoric acid's molar mass needs it.
+    // This is the one addition to the shared table; see SPEC.md section 6.
+    P: 30.974
   });
 
   // Molar mass from an element-count map, e.g. {Ca:1, S:1, O:4}.
@@ -56,6 +59,12 @@
   M.glucose = molarMass({ C: 6, H: 12, O: 6 });              // 180.156
   M.glucoseMonohydrate = M.glucose + M.H2O;                  // 198.171
   M.sucrose = molarMass({ C: 12, H: 22, O: 11 });            // 342.297
+  // Engine 6 (water solver) additions.
+  M.calciumChlorideAnhydrous = molarMass({ Ca: 1, Cl: 2 });  // CaCl2       110.978
+  M.sodiumChloride = molarMass({ Na: 1, Cl: 1 });            // NaCl         58.440
+  M.slakedLime = molarMass({ Ca: 1, O: 2, H: 2 });           // Ca(OH)2      74.092
+  M.lacticAcid = molarMass({ C: 3, H: 6, O: 3 });            // C3H6O3       90.078
+  M.phosphoricAcid = molarMass({ H: 3, P: 1, O: 4 });        // H3PO4        97.994
   Object.freeze(M);
 
   // Alkalinity "as CaCO3" counts equivalents: CaCO3 carries 2 eq/mol, so
@@ -522,6 +531,549 @@
     { style: 'German wheat beer', low: 3.3, high: 4.0 }
   ]);
 
+  // =====================================================================
+  // 6. WATER SOLVER — Stage A: report ingest. Stage B: constrained solve.
+  // =====================================================================
+  //
+  // Stage A turns a lab report (Ward-style or a municipal CCR) into a
+  // normalized source profile. Reports disagree about units, and the three
+  // disagreements that silently wreck a profile are:
+  //   * sulfate reported as SO4-S (the sulfur only) instead of as SO4
+  //   * alkalinity reported as bicarbonate instead of as CaCO3
+  //   * nitrate reported as NO3-N instead of as NO3
+  // Each has a form toggle; the conversions below are exact ratios of molar
+  // masses from the shared table. Nothing pasted is trusted silently: the
+  // parser only fills a grid the user confirms, and the charge-balance gate
+  // audits the result — a real water sample is electrically neutral, so a
+  // profile whose cations and anions disagree by more than ~10 % has a
+  // transcription error or a missing ion somewhere.
+  var EQ_WEIGHTS = Object.freeze({
+    ca: AW.Ca / 2,              // 20.039 mg/meq
+    mg: AW.Mg / 2,              // 12.1525
+    na: AW.Na,                  // 22.990
+    k: AW.K,                    // 39.098
+    so4: M.SO4 / 2,             // 48.028
+    cl: AW.Cl,                  // 35.450
+    hco3: M.HCO3,               // 61.016
+    no3: molarMass({ N: 1, O: 3 }) // 62.004
+  });
+  var SULFATE_FROM_S = M.SO4 / AW.S;          // 2.9964
+  var NITRATE_FROM_N = EQ_WEIGHTS.no3 / AW.N; // 4.4266
+
+  function optNum(x, name) {
+    if (x == null) return null;
+    req(x, name);
+    if (x < 0) throw new Error(name + ' cannot be negative');
+    return x;
+  }
+
+  // input: { ca, mg, na, cl, k, ph, fe, tds, hardness,
+  //          sulfate, sulfateForm: 'so4'|'s',
+  //          alkalinity, alkalinityForm: 'caco3'|'hco3',
+  //          nitrate, nitrateForm: 'no3'|'n' }   (all values optional)
+  // Returns the canonical profile: sulfate as SO4, alkalinity as CaCO3,
+  // nitrate as NO3, bicarbonate derived. Missing ions come back null in
+  // `present` terms — the profile carries 0 for arithmetic but `given`
+  // records which fields the report actually supplied.
+  function normalizeReport(input) {
+    input = input || {};
+    var sulfate = optNum(input.sulfate, 'sulfate');
+    if (sulfate != null && input.sulfateForm === 's') sulfate = sulfate * SULFATE_FROM_S;
+    var alk = optNum(input.alkalinity, 'alkalinity');
+    if (alk != null && input.alkalinityForm === 'hco3') alk = hco3ToAlk(alk);
+    var nitrate = optNum(input.nitrate, 'nitrate');
+    if (nitrate != null && input.nitrateForm === 'n') nitrate = nitrate * NITRATE_FROM_N;
+    var p = {
+      ca: optNum(input.ca, 'calcium') || 0,
+      mg: optNum(input.mg, 'magnesium') || 0,
+      na: optNum(input.na, 'sodium') || 0,
+      cl: optNum(input.cl, 'chloride') || 0,
+      so4: sulfate || 0,
+      alk: alk || 0,
+      k: optNum(input.k, 'potassium'),
+      no3: nitrate,
+      ph: optNum(input.ph, 'pH'),
+      fe: optNum(input.fe, 'iron'),
+      tds: optNum(input.tds, 'TDS')
+    };
+    p.hco3 = alkToHco3(p.alk);
+    return {
+      profile: p,
+      hardnessReported: optNum(input.hardness, 'hardness'),
+      given: {
+        ca: input.ca != null, mg: input.mg != null, na: input.na != null,
+        cl: input.cl != null, so4: input.sulfate != null, alk: input.alkalinity != null
+      }
+    };
+  }
+
+  // Charge balance in meq/L. Alkalinity enters as alk / EQ_CACO3 (its meq
+  // count is the same whether expressed as CaCO3 or as HCO3). The imbalance
+  // denominator is the SUM of cations + anions, per the build brief.
+  function chargeBalance(profile) {
+    var cations = profile.ca / EQ_WEIGHTS.ca + profile.mg / EQ_WEIGHTS.mg +
+      profile.na / EQ_WEIGHTS.na + (profile.k || 0) / EQ_WEIGHTS.k;
+    var anions = profile.so4 / EQ_WEIGHTS.so4 + profile.cl / EQ_WEIGHTS.cl +
+      profile.alk / EQ_CACO3 + (profile.no3 || 0) / EQ_WEIGHTS.no3;
+    var total = cations + anions;
+    var imbalancePct = total > 0 ? (cations - anions) / total * 100 : 0;
+    // Below 0.5 meq/L of cations there is almost nothing to balance
+    // (RO-class water); the percentage is noise, so the gate is skipped.
+    var meaningful = cations >= 0.5;
+    var verdict = 'skipped';
+    if (meaningful) {
+      var a = Math.abs(imbalancePct);
+      verdict = a <= 5 ? 'balanced' : a <= 10 ? 'caution' : 'does-not-balance';
+    }
+    return { cations: cations, anions: anions, imbalancePct: imbalancePct,
+      verdict: verdict, meaningful: meaningful };
+  }
+
+  // Total hardness as CaCO3 from the divalent cations: Ca and Mg ppm each
+  // scale by M(CaCO3)/AW(ion) = 2.4973 and 4.1180.
+  function computedHardness(ca, mg) {
+    req(ca, 'calcium'); req(mg, 'magnesium');
+    return ca * (M.CaCO3 / AW.Ca) + mg * (M.CaCO3 / AW.Mg);
+  }
+
+  function hardnessCheck(reported, ca, mg) {
+    var computed = computedHardness(ca, mg);
+    if (reported == null) return { computed: computed, reported: null, delta: null, flagged: false };
+    var delta = reported - computed;
+    return { computed: computed, reported: reported, delta: delta,
+      flagged: Math.abs(delta) > Math.max(10, 0.10 * computed) };
+  }
+
+  // Advisory flags: shown, never blocking (same posture as engine 3).
+  function reportAdvisories(profile) {
+    var out = [];
+    if (profile.na > 150) out.push({ code: 'na-high',
+      text: 'Sodium above 150 mg/L: high for most styles; blending or RO is the usual fix.' });
+    if (profile.alk > 200) out.push({ code: 'alk-high',
+      text: 'Alkalinity above 200 mg/L as CaCO₃: pale styles will need dilution or acid.' });
+    if (profile.fe != null && profile.fe > 0.1) out.push({ code: 'fe-high',
+      text: 'Iron above 0.1 mg/L: a flavour problem (metallic, inky) at quite low levels.' });
+    if (profile.so4 > 400) out.push({ code: 'so4-high',
+      text: 'Sulfate above 400 mg/L: harsh, dry bitterness territory for most styles.' });
+    if (profile.cl > 250) out.push({ code: 'cl-high',
+      text: 'Chloride above 250 mg/L: past the point where it just reads as fullness.' });
+    return out;
+  }
+
+  // Best-effort label matcher for pasted report text. Returns raw grid
+  // values plus the form each value arrived in; the page drops them into
+  // the editable grid for the user to confirm. Unmatched fields stay out.
+  function parseReportText(text) {
+    var values = {}, forms = {}, found = [];
+    function set(key, v, formKey, formVal) {
+      if (values[key] != null) return;
+      values[key] = v; found.push(key);
+      if (formKey) forms[formKey] = formVal;
+    }
+    String(text == null ? '' : text).split(/\r?\n/).forEach(function (line) {
+      // The value is the LAST number on the line: labels carry their own
+      // digits (CaCO3, SO4), and those must not be read as the result.
+      var all = line.match(/-?\d+(\.\d+)?/g);
+      if (!all) return;
+      var v = parseFloat(all[all.length - 1]), L = line.toLowerCase();
+      if (/total dissolved solids|\btds\b/.test(L)) set('tds', v);
+      else if (/hardness/.test(L)) set('hardness', v);
+      else if (/bicarbonate/.test(L)) set('alkalinity', v, 'alkalinityForm', 'hco3');
+      else if (/alkalinity/.test(L)) set('alkalinity', v, 'alkalinityForm', 'caco3');
+      else if (/sulfur|sulphur|sulfate|so4/.test(L)) set('sulfate', v, 'sulfateForm', /sulfur|sulphur|so4-?s/.test(L) ? 's' : 'so4');
+      else if (/nitrate/.test(L)) set('nitrate', v, 'nitrateForm', /no3-?n|nitrate-?n/.test(L) ? 'n' : 'no3');
+      else if (/calcium/.test(L)) set('ca', v);
+      else if (/magnesium/.test(L)) set('mg', v);
+      else if (/sodium/.test(L)) set('na', v);
+      else if (/chloride/.test(L)) set('cl', v);
+      else if (/potassium/.test(L)) set('k', v);
+      else if (/iron/.test(L)) set('fe', v);
+      else if (/(^|[^a-z])ph([^a-z]|$)/.test(L)) set('ph', v);
+    });
+    return { values: values, forms: forms, found: found };
+  }
+
+  // ---------------------------------------------------------------------
+  // Stage B: the salt shelf, with hydrate forms LOCKED.
+  //
+  // Calcium chloride is sold as the dihydrate and as the anhydrous salt,
+  // and they are not interchangeable: dosing anhydrous salt by dihydrate
+  // math overshoots chloride by about 32 % (test B3). So the shelf lists
+  // the two forms as separate salts; the user checks the one on their bag,
+  // and the math uses that form's molar mass.
+  //
+  // Chalk is NOT on the shelf (build brief section 3.3): CaCO3 barely
+  // dissolves, so its delivered alkalinity is a guess, and a solver that
+  // promises per-ion residuals cannot include a guessed salt. Engine 1
+  // keeps its own chalk posture (theoretical value + warning); the two
+  // engines differ on purpose.
+  //
+  // tspDensity (g per level tsp) is a FLAGged-approximate constant set,
+  // pinned by weighing (see SPEC section 6). A salt not yet weighed has
+  // null here and the page prints "weigh it" instead of a spoon figure.
+  var TSP_DENSITY = Object.freeze({
+    gypsum: null, calciumChlorideDihydrate: null, calciumChlorideAnhydrous: null,
+    epsom: null, canningSalt: null, bakingSoda: null, slakedLime: null
+  });
+  var SALT_FORMS = Object.freeze({
+    gypsum: {
+      name: 'Gypsum', formula: 'CaSO₄·2H₂O', molarMass: M.gypsum,
+      ions: { ca: AW.Ca / M.gypsum, so4: M.SO4 / M.gypsum }, alk: 0,
+      tspDensity: TSP_DENSITY.gypsum
+    },
+    calciumChlorideDihydrate: {
+      name: 'Calcium chloride, dihydrate', formula: 'CaCl₂·2H₂O', molarMass: M.calciumChloride,
+      ions: { ca: AW.Ca / M.calciumChloride, cl: 2 * AW.Cl / M.calciumChloride }, alk: 0,
+      tspDensity: TSP_DENSITY.calciumChlorideDihydrate
+    },
+    calciumChlorideAnhydrous: {
+      name: 'Calcium chloride, anhydrous', formula: 'CaCl₂', molarMass: M.calciumChlorideAnhydrous,
+      ions: { ca: AW.Ca / M.calciumChlorideAnhydrous, cl: 2 * AW.Cl / M.calciumChlorideAnhydrous }, alk: 0,
+      tspDensity: TSP_DENSITY.calciumChlorideAnhydrous
+    },
+    epsom: {
+      name: 'Epsom salt', formula: 'MgSO₄·7H₂O', molarMass: M.epsom,
+      ions: { mg: AW.Mg / M.epsom, so4: M.SO4 / M.epsom }, alk: 0,
+      tspDensity: TSP_DENSITY.epsom
+    },
+    canningSalt: {
+      name: 'Canning salt', formula: 'NaCl', molarMass: M.sodiumChloride,
+      ions: { na: AW.Na / M.sodiumChloride, cl: AW.Cl / M.sodiumChloride }, alk: 0,
+      tspDensity: TSP_DENSITY.canningSalt
+    },
+    bakingSoda: {
+      name: 'Baking soda', formula: 'NaHCO₃', molarMass: M.bakingSoda,
+      ions: { na: AW.Na / M.bakingSoda }, alk: EQ_CACO3 / M.bakingSoda,
+      tspDensity: TSP_DENSITY.bakingSoda
+    },
+    slakedLime: {
+      name: 'Slaked lime', formula: 'Ca(OH)₂', molarMass: M.slakedLime,
+      ions: { ca: AW.Ca / M.slakedLime }, alk: 2 * EQ_CACO3 / M.slakedLime,
+      tspDensity: TSP_DENSITY.slakedLime
+    }
+  });
+  var SALT_FORM_ORDER = ['gypsum', 'calciumChlorideDihydrate', 'calciumChlorideAnhydrous',
+    'epsom', 'canningSalt', 'bakingSoda', 'slakedLime'];
+
+  // Acids reduce alkalinity only. Dosed in mL, never grams. Strength and
+  // density are the labelled commercial products (FLAG: both are product
+  // figures; the page footnotes them). Phosphoric is counted as 1 eq/mol:
+  // at brewing pH the first proton (to H2PO4-) is the one that lands.
+  // meqPerMl = density x strength / molar mass x 1000 x eq/mol.
+  var ML_PER_TSP = 4.92892159375; // exact: 1 US tsp in mL
+  var ACIDS = Object.freeze({
+    lactic88: {
+      name: 'Lactic acid, 88%', strength: 0.88, density: 1.209, molarMass: M.lacticAcid,
+      eqPerMol: 1, meqPerMl: 1.209 * 0.88 / M.lacticAcid * 1000 // 11.812
+    },
+    phosphoric85: {
+      name: 'Phosphoric acid, 85%', strength: 0.85, density: 1.685, molarMass: M.phosphoricAcid,
+      eqPerMol: 1, meqPerMl: 1.685 * 0.85 / M.phosphoricAcid * 1000 // 14.616
+    }
+  });
+  function acidMl(meq, acidKey) {
+    var a = ACIDS[acidKey];
+    if (!a) throw new Error('Unknown acid: ' + acidKey);
+    req(meq, 'acid meq');
+    return meq / a.meqPerMl;
+  }
+
+  // ---------------------------------------------------------------------
+  // Non-negative least squares (Lawson-Hanson active set) with optional
+  // per-variable upper bounds handled by an outer clamping loop. The
+  // systems here are tiny (6 rows, at most 8 columns); no library, per the
+  // house rule. Least squares on the passive set uses normal equations
+  // with a whisper of ridge for rank safety.
+  function solvePassiveLS(A, b, passive) {
+    var cols = [];
+    for (var j = 0; j < passive.length; j++) if (passive[j]) cols.push(j);
+    var x = new Array(passive.length).fill(0);
+    if (!cols.length) return x;
+    var n = cols.length, i, r, c1, c2;
+    var G = [], h = new Array(n).fill(0);
+    for (r = 0; r < n; r++) {
+      G.push(new Array(n).fill(0));
+      for (c1 = 0; c1 < A.length; c1++) h[r] += A[c1][cols[r]] * b[c1];
+      for (c2 = 0; c2 < n; c2++) {
+        var s = 0;
+        for (i = 0; i < A.length; i++) s += A[i][cols[r]] * A[i][cols[c2]];
+        G[r][c2] = s + (r === c2 ? 1e-12 : 0);
+      }
+    }
+    // Gaussian elimination with partial pivoting.
+    for (var col = 0, row = 0; col < n && row < n; col++, row++) {
+      var piv = row;
+      for (var rr = row + 1; rr < n; rr++) if (Math.abs(G[rr][col]) > Math.abs(G[piv][col])) piv = rr;
+      if (Math.abs(G[piv][col]) < 1e-14) { row--; continue; }
+      var tmp = G[piv]; G[piv] = G[row]; G[row] = tmp;
+      var th = h[piv]; h[piv] = h[row]; h[row] = th;
+      for (var r2 = row + 1; r2 < n; r2++) {
+        var f = G[r2][col] / G[row][col];
+        for (var c3 = col; c3 < n; c3++) G[r2][c3] -= f * G[row][c3];
+        h[r2] -= f * h[row];
+      }
+    }
+    var sol = new Array(n).fill(0);
+    for (var r3 = n - 1; r3 >= 0; r3--) {
+      var acc = h[r3];
+      for (var c4 = r3 + 1; c4 < n; c4++) acc -= G[r3][c4] * sol[c4];
+      sol[r3] = Math.abs(G[r3][r3]) < 1e-14 ? 0 : acc / G[r3][r3];
+    }
+    cols.forEach(function (j, t) { x[j] = sol[t]; });
+    return x;
+  }
+
+  function nnls(A, b) {
+    var n = A[0].length, m = A.length;
+    var x = new Array(n).fill(0);
+    var passive = new Array(n).fill(false);
+    function gradient() {
+      var r = b.slice(), i, j;
+      for (j = 0; j < n; j++) if (x[j] !== 0) for (i = 0; i < m; i++) r[i] -= A[i][j] * x[j];
+      var w = new Array(n).fill(0);
+      for (j = 0; j < n; j++) for (i = 0; i < m; i++) w[j] += A[i][j] * r[i];
+      return w;
+    }
+    var w = gradient();
+    for (var iter = 0; iter < 100; iter++) {
+      var jBest = -1, wBest = 1e-10;
+      for (var j = 0; j < n; j++) if (!passive[j] && w[j] > wBest) { wBest = w[j]; jBest = j; }
+      if (jBest < 0) break;
+      passive[jBest] = true;
+      for (var inner = 0; inner < 100; inner++) {
+        var s = solvePassiveLS(A, b, passive);
+        var feasible = true;
+        for (var k = 0; k < n; k++) if (passive[k] && s[k] <= 0) { feasible = false; break; }
+        if (feasible) { x = s; break; }
+        var alpha = 1;
+        for (var k2 = 0; k2 < n; k2++) if (passive[k2] && s[k2] <= 0) {
+          alpha = Math.min(alpha, x[k2] / (x[k2] - s[k2]));
+        }
+        for (var k3 = 0; k3 < n; k3++) x[k3] += alpha * (s[k3] - x[k3]);
+        for (var k4 = 0; k4 < n; k4++) if (passive[k4] && x[k4] <= 1e-12) { x[k4] = 0; passive[k4] = false; }
+      }
+      w = gradient();
+    }
+    return x;
+  }
+
+  // NNLS with upper bounds: clamp the worst violator, subtract its fixed
+  // contribution, and re-solve the rest. Converges in at most n rounds.
+  function boundedNnls(A, b, upper) {
+    var n = A[0].length;
+    var fixed = new Array(n).fill(null);
+    var x = new Array(n).fill(0);
+    for (var round = 0; round <= n; round++) {
+      var free = [], adj = b.slice(), i, j;
+      for (j = 0; j < n; j++) {
+        if (fixed[j] != null) { for (i = 0; i < A.length; i++) adj[i] -= A[i][j] * fixed[j]; }
+        else free.push(j);
+      }
+      var sub = A.map(function (rowArr) { return free.map(function (jj) { return rowArr[jj]; }); });
+      var sx = free.length ? nnls(sub, adj) : [];
+      free.forEach(function (jj, t) { x[jj] = sx[t]; });
+      for (j = 0; j < n; j++) if (fixed[j] != null) x[j] = fixed[j];
+      var worst = -1, worstExcess = 1e-9;
+      free.forEach(function (jj) {
+        if (x[jj] - upper[jj] > worstExcess) { worstExcess = x[jj] - upper[jj]; worst = jj; }
+      });
+      if (worst < 0) return x;
+      fixed[worst] = upper[worst];
+    }
+    return x;
+  }
+
+  // Per-ion weights for the solver score: Mg counts double because its
+  // useful band is narrow in ppm terms (SPEC section 6).
+  var SOLVER_WEIGHTS = Object.freeze({ ca: 1, mg: 2, na: 1, cl: 1, so4: 1, alk: 1 });
+  var BLOCKER_IONS = ['na', 'mg', 'cl', 'so4']; // ions no addition can reduce
+
+  // opts: { source, target, volumeL, shelf: [saltKeys], maxGrams: {key: g},
+  //         allowAcid, allowDilution, diluent, sourceName }
+  // A target ion left null/undefined is NOT a target of zero: the solver
+  // ignores it and reports where it lands (see SPEC section 6).
+  function solveWater(opts) {
+    opts = opts || {};
+    var volumeL = req(opts.volumeL, 'volumeL');
+    if (volumeL <= 0) throw new Error('volumeL must be > 0');
+    function profileOf(obj, label) {
+      var p = {};
+      IONS.forEach(function (k) {
+        var v = obj && obj[k] != null ? req(obj[k], label + ' ' + k) : 0;
+        if (v < 0) throw new Error(label + ' ' + k + ' cannot be negative');
+        p[k] = v;
+      });
+      return p;
+    }
+    var source = profileOf(opts.source, 'source');
+    var targetGiven = {};
+    IONS.forEach(function (k) { targetGiven[k] = !!(opts.target && opts.target[k] != null); });
+    var target = profileOf(opts.target, 'target');
+    var diluent = profileOf(opts.diluent, 'diluent');
+    var shelf = (opts.shelf || SALT_FORM_ORDER.slice()).slice();
+    shelf.forEach(function (k) { if (!SALT_FORMS[k]) throw new Error('Unknown salt form: ' + k); });
+    var maxGrams = opts.maxGrams || {};
+    var allowAcid = !!opts.allowAcid;
+
+    var notes = [];
+    var blockers = BLOCKER_IONS.filter(function (k) {
+      return targetGiven[k] && source[k] > target[k] + 1e-9;
+    });
+    if (source.ca > target.ca + 1e-9 && targetGiven.ca) {
+      notes.push({ code: 'ca-high',
+        text: 'Source calcium (' + source.ca.toFixed(0) + ' mg/L) is already above your target (' +
+          target.ca.toFixed(0) + '). No salt can remove calcium; calcium will finish at least that high.' });
+    }
+
+    var src = source, dilution = null;
+    if (blockers.length) {
+      if (!opts.allowDilution) {
+        return { ok: false, blockers: blockers, notes: notes, mixes: [],
+          sourceUsed: source, target: target, targetGiven: targetGiven, volumeL: volumeL,
+          sourceName: opts.sourceName || null, dilution: null };
+      }
+      var unfixable = blockers.filter(function (k) { return diluent[k] > target[k] + 1e-9; });
+      if (unfixable.length) {
+        notes.push({ code: 'diluent-high',
+          text: 'Even your diluent sits above target for: ' + unfixable.join(', ') +
+            '. Blending cannot land below the diluent.' });
+        return { ok: false, blockers: unfixable, notes: notes, mixes: [],
+          sourceUsed: source, target: target, targetGiven: targetGiven, volumeL: volumeL,
+          sourceName: opts.sourceName || null, dilution: null };
+      }
+      var f = 1;
+      blockers.forEach(function (k) {
+        f = Math.min(f, (target[k] - diluent[k]) / (source[k] - diluent[k]));
+      });
+      f = Math.max(0, Math.min(1, f));
+      src = {};
+      IONS.forEach(function (k) { src[k] = f * source[k] + (1 - f) * diluent[k]; });
+      dilution = { tapFraction: f, tapVolumeL: f * volumeL, diluentVolumeL: (1 - f) * volumeL,
+        sourceAfter: src };
+    }
+
+    function solveVariant(salts, useAcid, ignoreMaxFor) {
+      var cols = salts.slice();
+      if (useAcid) cols.push('__acid');
+      var x = new Array(cols.length).fill(0);
+      if (cols.length) {
+        var rows = [], d = [];
+        IONS.forEach(function (ion) {
+          if (!targetGiven[ion]) return;
+          var w = Math.sqrt(SOLVER_WEIGHTS[ion]);
+          rows.push(cols.map(function (c) {
+            if (c === '__acid') return ion === 'alk' ? -EQ_CACO3 * w : 0;
+            var s = SALT_FORMS[c];
+            return (ion === 'alk' ? s.alk : (s.ions[ion] || 0)) * w;
+          }));
+          d.push((target[ion] - src[ion]) * w);
+        });
+        var upper = cols.map(function (c) {
+          if (c === '__acid' || ignoreMaxFor === c) return Infinity;
+          return maxGrams[c] != null ? maxGrams[c] * 1000 / volumeL : Infinity;
+        });
+        if (rows.length) x = boundedNnls(rows, d, upper);
+      }
+      // Rebuild the achieved profile from the doses, unweighted and exact.
+      var achieved = {}, doses = {}, acid = null;
+      IONS.forEach(function (k) { achieved[k] = src[k]; });
+      cols.forEach(function (c, t) {
+        if (c === '__acid') {
+          var meqPerL = Math.max(0, x[t]);
+          if (meqPerL > 0) {
+            achieved.alk -= meqPerL * EQ_CACO3;
+            var meqTotal = meqPerL * volumeL;
+            acid = { meqPerL: meqPerL, meqTotal: meqTotal, options: {
+              lactic88: { ml: acidMl(meqTotal, 'lactic88'), tsp: acidMl(meqTotal, 'lactic88') / ML_PER_TSP },
+              phosphoric85: { ml: acidMl(meqTotal, 'phosphoric85'), tsp: acidMl(meqTotal, 'phosphoric85') / ML_PER_TSP }
+            } };
+          }
+          return;
+        }
+        var s2 = SALT_FORMS[c], mgPerL = Math.max(0, x[t]);
+        doses[c] = { mgPerL: mgPerL, grams: mgPerL * volumeL / 1000,
+          tsp: s2.tspDensity ? mgPerL * volumeL / 1000 / s2.tspDensity : null };
+        for (var ion in s2.ions) achieved[ion] += mgPerL * s2.ions[ion];
+        achieved.alk += mgPerL * s2.alk;
+      });
+      achieved.hco3 = alkToHco3(achieved.alk);
+      var residuals = {}, within = {}, score = 0;
+      IONS.forEach(function (k) {
+        if (!targetGiven[k]) { residuals[k] = null; within[k] = null; return; }
+        residuals[k] = achieved[k] - target[k];
+        within[k] = Math.abs(residuals[k]) <= Math.max(5, 0.10 * target[k]);
+        score += SOLVER_WEIGHTS[k] * residuals[k] * residuals[k];
+      });
+      return { label: '', note: '', score: score, doses: doses, acid: acid,
+        achieved: achieved, residuals: residuals, within: within, constrainedBy: [] };
+    }
+
+    // Mark mixes whose score a per-salt max is actively worsening.
+    function markConstrained(mix, salts, useAcid) {
+      salts.forEach(function (k) {
+        if (maxGrams[k] == null || !mix.doses[k]) return;
+        if (mix.doses[k].grams < maxGrams[k] - 1e-6) return;
+        var free = solveVariant(salts, useAcid, k);
+        if (free.score < mix.score - Math.max(1e-9, 0.001 * mix.score)) {
+          mix.constrainedBy.push(SALT_FORMS[k].name);
+        }
+      });
+    }
+
+    var mixes = [];
+    var main = solveVariant(shelf, allowAcid);
+    main.label = 'Best from your shelf';
+    markConstrained(main, shelf, allowAcid);
+    mixes.push(main);
+
+    if (shelf.length > 1) {
+      // Only dropping a salt the winning mix actually uses changes
+      // anything; dropping an unused salt reproduces mix 1 exactly.
+      var best2 = null;
+      shelf.forEach(function (drop) {
+        if (!main.doses[drop] || main.doses[drop].mgPerL <= 1e-9) return;
+        var v = solveVariant(shelf.filter(function (s) { return s !== drop; }), allowAcid);
+        if (!best2 || v.score < best2.score) { v.droppedSalt = drop; best2 = v; }
+      });
+      if (best2) {
+        best2.label = 'Without ' + SALT_FORMS[best2.droppedSalt].name;
+        best2.note = 'The best your shelf can do with no ' + SALT_FORMS[best2.droppedSalt].name +
+          ' — the run-out answer.';
+        markConstrained(best2, shelf.filter(function (s) { return s !== best2.droppedSalt; }), allowAcid);
+        mixes.push(best2);
+      }
+    }
+
+    if (allowAcid && main.acid) {
+      var noAcid = solveVariant(shelf, false);
+      noAcid.label = 'No acid';
+      noAcid.note = 'The same shelf with acid left out.';
+      markConstrained(noAcid, shelf, false);
+      mixes.push(noAcid);
+    } else if (!allowAcid) {
+      var withAcid = solveVariant(shelf, true);
+      if (withAcid.acid) {
+        withAcid.label = 'If acid were allowed';
+        withAcid.note = 'What an acid addition would buy on this shelf.';
+        markConstrained(withAcid, shelf, true);
+        mixes.push(withAcid);
+      }
+    }
+
+    // Ties and near-ties (under 1 % score difference) collapse to one mix.
+    var kept = [];
+    mixes.forEach(function (mx) {
+      var dup = kept.some(function (k) {
+        return Math.abs(k.score - mx.score) <= 0.01 * Math.max(k.score, mx.score, 1e-9);
+      });
+      if (!dup) kept.push(mx);
+    });
+
+    return { ok: true, blockers: [], notes: notes, mixes: kept,
+      sourceUsed: src, target: target, targetGiven: targetGiven, volumeL: volumeL,
+      sourceName: opts.sourceName || null, dilution: dilution };
+  }
+
   return {
     AW: AW, M: M, EQ_CACO3: EQ_CACO3, molarMass: molarMass, units: units,
     // liquor
@@ -538,6 +1090,14 @@
     // priming
     PRIMING: PRIMING, SUGARS: SUGARS, CARB_STYLES: CARB_STYLES,
     CO2_G_PER_L_PER_VOL: CO2_G_PER_L_PER_VOL, GLUCOSE_G_PER_L_PER_VOL: GLUCOSE_G_PER_L_PER_VOL,
-    residualCO2: residualCO2, primingSugar: primingSugar
+    residualCO2: residualCO2, primingSugar: primingSugar,
+    // water solver (engine 6)
+    EQ_WEIGHTS: EQ_WEIGHTS, SULFATE_FROM_S: SULFATE_FROM_S, NITRATE_FROM_N: NITRATE_FROM_N,
+    normalizeReport: normalizeReport, chargeBalance: chargeBalance,
+    computedHardness: computedHardness, hardnessCheck: hardnessCheck,
+    reportAdvisories: reportAdvisories, parseReportText: parseReportText,
+    SALT_FORMS: SALT_FORMS, SALT_FORM_ORDER: SALT_FORM_ORDER, TSP_DENSITY: TSP_DENSITY,
+    ACIDS: ACIDS, ML_PER_TSP: ML_PER_TSP, acidMl: acidMl,
+    SOLVER_WEIGHTS: SOLVER_WEIGHTS, solveWater: solveWater
   };
 });

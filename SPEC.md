@@ -13,6 +13,7 @@ liquor-builder.html        engine 1
 mash-ph.html               engine 2
 chloride-sulfate.html      engine 3
 water-blending.html        engine 4
+water-solver.html          engine 6 (report ingest + constrained solver)
 assets/brewphase.js        shared formula module (browser global + CommonJS)
 assets/site.css            shared styles, mobile-first, light/dark
 tests/*.test.js            node:test suite — `npm test` (Node ≥ 18, no dependencies)
@@ -31,9 +32,11 @@ This is a static site. There is no framework, no build step, and no runtime depe
 
 ### Atomic weights (shared family table — do not change per site)
 
-| N | O | Na | K | Mg | Ca | S | C | H | Cl |
-|---|---|---|---|---|---|---|---|---|---|
-| 14.007 | 15.999 | 22.990 | 39.098 | 24.305 | 40.078 | 32.06 | 12.011 | 1.008 | 35.45 |
+| N | O | Na | K | Mg | Ca | S | C | H | Cl | P |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 14.007 | 15.999 | 22.990 | 39.098 | 24.305 | 40.078 | 32.06 | 12.011 | 1.008 | 35.45 | 30.974 |
+
+*(P added 2026-11 for engine 6 — phosphoric acid's molar mass cannot be stated without it. It is the table's only addition; nothing else in the row changed. See §6.)*
 
 ### Molar masses computed from the table (g/mol)
 
@@ -51,6 +54,11 @@ This is a static site. There is no framework, no build step, and no runtime depe
 | Glucose | C₆H₁₂O₆ | 180.156 |
 | Dextrose monohydrate | C₆H₁₂O₆·H₂O | 198.171 |
 | Sucrose | C₁₂H₂₂O₁₁ | 342.297 |
+| Calcium chloride, anhydrous | CaCl₂ | 110.978 |
+| Canning salt | NaCl | 58.440 |
+| Slaked lime | Ca(OH)₂ | 74.092 |
+| Lactic acid | C₃H₆O₃ | 90.078 |
+| Phosphoric acid | H₃PO₄ | 97.994 |
 
 ---
 
@@ -203,6 +211,85 @@ f     = (C_target − C_dil) / (C_tap − C_dil)
 - Dextrose form (contested): most brewing corn sugar is sold as monohydrate, and many calculators treat it as pure glucose. BrewPhase defaults to monohydrate and offers anhydrous as its own option. The difference is about 10 %.
 
 ---
+
+## 6. Water solver (report ingest + constrained salt solver)
+
+One page, two stages. **Stage A** turns a water report into a normalized source profile and audits it. **Stage B** solves salt additions against a source that is *not* assumed to be zero, using only the salts the user owns, each in the hydrate form they own it in.
+
+This is a different engine from §1, for a different problem, and the two are not to be "unified": §1's fixed solve order is followable by hand (open question 4) and assumes a distilled base and a full shelf; §6's least-squares fit exists precisely where those assumptions fail. Each page states its own method.
+
+### Stage A — ingest, normalization, the gate
+
+Reports state the same water in different units. The three disagreements that silently wreck a profile, and the exact conversions (ratios of the molar masses above):
+
+| Quantity | Report form | Canonical |
+|---|---|---|
+| Sulfate | as SO₄-S | SO₄ = S × 96.056/32.06 = S × 2.9964 |
+| Alkalinity | as HCO₃ | alk (as CaCO₃) = HCO₃ ÷ 1.2193 |
+| Nitrate | as NO₃-N | NO₃ = N × 62.004/14.007 = N × 4.4266 |
+| Hardness (check only) | as CaCO₃ | computed = Ca × 2.4973 + Mg × 4.1180 |
+
+Pasted text is matched by label into an editable grid — **nothing parsed is accepted silently**; the user confirms every value. Unmatched fields stay blank; that is a fallback, never an error state.
+
+**Charge balance (the gate).** A real sample is electrically neutral. With equivalent weights Ca 20.039, Mg 12.1525, Na 22.990, K 39.098, SO₄ 48.028, Cl 35.450, HCO₃ 61.016, NO₃ 62.004 mg/meq:
+
+```
+imbalance % = (Σcations − Σanions) / (Σcations + Σanions) × 100
+```
+
+|imbalance| ≤ 5 % → **Balanced**. 5–10 % → **Caution** (usable; a missing minor ion or a rounded lab value). > 10 % → **Does not balance** (the report or the transcription is wrong somewhere; the profile is still shown, flagged). Below 0.5 meq/L of cations the gate is skipped — there is almost nothing to balance in RO-class water. The hardness cross-check flags when |reported − computed| > max(10 mg/L, 10 %).
+
+**Advisory flags** (shown, never blocking): Na > 150, alkalinity > 200, Fe > 0.1, SO₄ > 400, Cl > 250 mg/L.
+
+### Stage B — the shelf, with hydrate forms locked
+
+Fractions are mg of ion per mg of salt, from the molar-mass table. The two calcium chloride forms are separate shelf entries on purpose: the forms are **not interchangeable** — dosing anhydrous salt by dihydrate math overshoots chloride by about 32 % (test B3: the 4.15 g dihydrate dose, weighed as anhydrous, delivers 132.5 mg/L Cl against a 100 target). The user declares the form on their bag once; the form is printed on the brew-day card.
+
+| Salt | Formula | M | Ca | Mg | Na | Cl | SO₄ | Alk |
+|---|---|---|---|---|---|---|---|---|
+| Gypsum | CaSO₄·2H₂O | 172.164 | 0.2328 | | | | 0.5579 | |
+| Calcium chloride, dihydrate | CaCl₂·2H₂O | 147.008 | 0.2726 | | | 0.4823 | | |
+| Calcium chloride, anhydrous | CaCl₂ | 110.978 | 0.3611 | | | 0.6389 | | |
+| Epsom salt | MgSO₄·7H₂O | 246.466 | | 0.0986 | | | 0.3897 | |
+| Canning salt | NaCl | 58.440 | | | 0.3934 | 0.6066 | | |
+| Baking soda | NaHCO₃ | 84.006 | | | 0.2737 | | | 0.5957 |
+| Slaked lime | Ca(OH)₂ | 74.092 | 0.5409 | | | | | 1.3508 |
+
+Epsom's anhydrous form (MgSO₄, M 120.361) exists but is rarely the bag on a shelf; the shelf assumes the heptahydrate and the page footnotes that.
+
+**No chalk.** Chalk is excluded from the shelf entirely — not offered, not solved for. CaCO₃ barely dissolves and delivers an unpredictable fraction of its theoretical alkalinity (§1's contested figure); a solver that promises per-ion residuals cannot include a salt whose contribution is a guess. Alkalinity + calcium routes to slaked lime; alkalinity alone, to baking soda. §1 keeps its own chalk posture (theoretical value + warning) — unchanged.
+
+**Acids** reduce alkalinity only, dosed in mL. **FLAG — product figures:** lactic acid 88 % (density 1.209 g/mL) = **11.812 meq/mL**; phosphoric acid 85 % (density 1.685 g/mL) = **14.616 meq/mL**, counting phosphoric as 1 eq/mol — at brewing pH the first proton (to H₂PO₄⁻) is the one that lands. These acids neutralize *water* alkalinity toward the target profile; acid dosed to the mash is §2's territory and stays out. The lactate/phosphate the acid itself adds is footnoted on the card, not tracked as an ion.
+
+### Feasibility before solving
+
+Salts only add; acid only removes alkalinity. Where source > target for Na, Mg, Cl or SO₄, no addition can fix it: with RO dilution off, the solver refuses and names the blocking ions. With it on, the blend fraction comes first — f = target ÷ source on the worst blocker (engine 4's mass balance, diluent = RO zeros) — the split is stated in percent and volume, the whole source profile is scaled, and only then does the solver run. Calcium above target is never a hard blocker; it is reported, and rides into the residuals. An ion pushed above target by a salt needed for another ion is a soft overshoot: allowed, shown as a positive residual, counted in the score.
+
+### Solve method
+
+Weighted non-negative least squares (active-set, no library) over the checked shelf plus an acid column acting on alkalinity. **Weights: Ca 1, Mg 2, Na 1, Cl 1, SO₄ 1, Alk 1** — Mg counts double because its useful band is narrow in ppm terms. Score = Σ wᵢ·(residualᵢ)², residuals in mg/L against the target.
+
+A target ion left blank is **not a target of zero**: the solver ignores it and reports where it lands. (The acceptance case B2 pins this: with only sulfate targeted, gypsum doses to the sulfate figure exactly and calcium is a reported landing, not a scored miss.)
+
+Output is up to three ranked mixes: the best from the checked shelf; the best with any one *used* salt dropped (the run-out answer); and the acid flipped (no-acid if the winner used acid, with-acid if acid was off). Ties and near-ties — under 1 % score difference — collapse to one. A per-salt max-grams entry clamps that salt's dose; a mix the clamp makes worse is labelled "constrained by your max on ⟨salt⟩".
+
+**Outputs (the brew-day card).** Grams are primary (batch total, 0.1 g resolution); mg/L alongside. Per-ion achieved vs target with the **residual Δ in mg/L**, ✓ inside ±max(5 mg/L, 10 %) of target, ⚠ outside. The card prints its source ("from: Ward report, balanced ✓" / "RO" / the dilution split), the volume, and every hydrate form used — the card is what travels to brew day.
+
+### Kitchen densities (FLAG — approximate, currently unmeasured)
+
+Teaspoon figures are a convenience, never the spec. The density table (g per level tsp, 0.01 g scale, 3 reps) is pinned by weighing at build time; **no salt in the table below has been weighed yet**, so every tsp cell on the card reads "weigh it — grams above" rather than inventing a density.
+
+| Salt | g/tsp | Status |
+|---|---|---|
+| Gypsum | — | not yet weighed |
+| Calcium chloride, dihydrate | — | not yet weighed |
+| Calcium chloride, anhydrous | — | not yet weighed |
+| Epsom salt | — | not yet weighed |
+| Canning salt | — | not yet weighed |
+| Baking soda | — | not yet weighed |
+| Slaked lime | — | not yet weighed |
+
+Acid teaspoons use the exact US teaspoon (4.92892159375 mL) on a measured mL figure, so acid tsp values are shown.
 
 ## Posture
 

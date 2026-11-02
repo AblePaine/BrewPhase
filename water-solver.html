@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Water Solver — BrewPhase</title>
+<meta name="description" content="Start from your real water report: check it balances, then solve the salt additions for a target profile using only the salts you own, in the hydrate form you own them in.">
+<link rel="stylesheet" href="assets/site.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="canonical" href="https://brewphase.com/water-solver.html">
+<meta property="og:site_name" content="BrewPhase">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Water Solver — BrewPhase">
+<meta property="og:description" content="Start from your real water report: check it balances, then solve the salt additions for a target profile using only the salts you own, in the hydrate form you own them in.">
+<meta property="og:url" content="https://brewphase.com/water-solver.html">
+<script defer src="https://umami.epoxybench.com/script.js" data-website-id="654e2b18-4a9d-4a59-a1d9-9d3052c1f8f1"></script>
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <a class="brand" href="index.html">Brew<span>Phase</span></a>
+  <nav class="tools" aria-label="Calculators">
+    <a href="priming-sugar.html">Priming</a>
+    <a href="liquor-builder.html">Liquor</a>
+    <a href="mash-ph.html">Mash pH</a>
+    <a href="chloride-sulfate.html">Cl:SO₄</a>
+    <a href="water-blending.html">Blending</a>
+    <a href="water-solver.html" aria-current="page">Solver</a>
+  </nav>
+</div></header>
+
+<main class="wrap">
+  <h1>Water solver</h1>
+  <p class="lede">Start from your actual water — not a blank page. Stage A checks your water report for the errors that silently wreck it. Stage B solves the additions for a target profile, using only the salts on your shelf, in the exact form you bought them.</p>
+
+  <div class="why"><strong>Why a solver, when the liquor builder exists</strong>
+    The liquor builder starts from distilled water and a full shelf. This engine starts where you actually are: tap water with minerals already in it, half the salts missing, and a bag of calcium chloride whose label matters more than you'd think. It also shows its misses — every ion it can't land is printed as a residual, not hidden.</div>
+
+  <form class="card" autocomplete="off" onsubmit="return false">
+    <h2>Stage A — your water report</h2>
+    <p class="hint" style="margin-top:0">Paste a lab report (Ward-style) or your utility's water quality report, or type the values in. Pasted values are a first draft — check every one before you trust the profile<sup><a href="#fn2">2</a></sup>.</p>
+    <div class="field full">
+      <label for="paste">Paste report text</label>
+      <textarea id="paste" rows="4" style="width:100%;font:inherit;font-size:.95rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px" placeholder="Calcium (Ca) 84&#10;Magnesium (Mg) 26&#10;Sulfur (S) 29&#10;Alkalinity as CaCO3 232&#10;…"></textarea>
+    </div>
+    <p style="margin:10px 0 4px"><button type="button" class="btn" id="readBtn">Read the report into the grid</button> <span class="hint" id="parseNote"></span></p>
+
+    <div class="grid three" style="margin-top:12px">
+      <div class="field"><label for="a_ca">Calcium, Ca</label><input id="a_ca" type="number" inputmode="decimal" min="0" step="1"></div>
+      <div class="field"><label for="a_mg">Magnesium, Mg</label><input id="a_mg" type="number" inputmode="decimal" min="0" step="1"></div>
+      <div class="field"><label for="a_na">Sodium, Na</label><input id="a_na" type="number" inputmode="decimal" min="0" step="1"></div>
+      <div class="field"><label for="a_cl">Chloride, Cl</label><input id="a_cl" type="number" inputmode="decimal" min="0" step="1"></div>
+      <div class="field"><label for="a_sulfate">Sulfate<sup><a href="#fn1">1</a></sup></label>
+        <div class="inline"><input id="a_sulfate" type="number" inputmode="decimal" min="0" step="1">
+        <select id="a_sulfateForm" aria-label="Sulfate reported as"><option value="so4">as SO₄</option><option value="s">as SO₄-S</option></select></div></div>
+      <div class="field"><label for="a_alkalinity">Alkalinity<sup><a href="#fn1">1</a></sup></label>
+        <div class="inline"><input id="a_alkalinity" type="number" inputmode="decimal" min="0" step="1">
+        <select id="a_alkalinityForm" aria-label="Alkalinity reported as"><option value="caco3">as CaCO₃</option><option value="hco3">as HCO₃</option></select></div></div>
+      <div class="field"><label for="a_k">Potassium, K <span class="hint">(optional)</span></label><input id="a_k" type="number" inputmode="decimal" min="0" step="1"></div>
+      <div class="field"><label for="a_nitrate">Nitrate <span class="hint">(optional)</span></label>
+        <div class="inline"><input id="a_nitrate" type="number" inputmode="decimal" min="0" step="1">
+        <select id="a_nitrateForm" aria-label="Nitrate reported as"><option value="no3">as NO₃</option><option value="n">as NO₃-N</option></select></div></div>
+      <div class="field"><label for="a_ph">pH <span class="hint">(optional)</span></label><input id="a_ph" type="number" inputmode="decimal" min="0" step="0.1"></div>
+      <div class="field"><label for="a_hardness">Total hardness, as CaCO₃ <span class="hint">(cross-check)</span></label><input id="a_hardness" type="number" inputmode="decimal" min="0" step="1"></div>
+      <div class="field"><label for="a_fe">Iron, Fe <span class="hint">(optional)</span></label><input id="a_fe" type="number" inputmode="decimal" min="0" step="0.01"></div>
+      <div class="field"><label for="a_tds">TDS <span class="hint">(optional)</span></label><input id="a_tds" type="number" inputmode="decimal" min="0" step="1"></div>
+    </div>
+    <p class="hint">All values mg/L unless noted. The three form toggles are the point: reports disagree about units, and a sulfate read as SO₄ that was really SO₄-S is out by a factor of three.</p>
+  </form>
+
+  <section id="outA" aria-live="polite"></section>
+
+  <form class="card" autocomplete="off" onsubmit="return false">
+    <h2>Stage B — solve the additions</h2>
+    <h3 style="margin-bottom:6px">Source water</h3>
+    <div class="seg" role="group" aria-label="Source" style="margin-bottom:12px">
+      <button type="button" data-src="report" aria-pressed="true">From Stage A</button>
+      <button type="button" data-src="manual" aria-pressed="false">Type it</button>
+      <button type="button" data-src="ro" aria-pressed="false">RO / distilled</button>
+    </div>
+    <div class="grid three" id="manualBox" hidden>
+      <div class="field"><label for="s_ca">Calcium, Ca</label><input id="s_ca" type="number" inputmode="decimal" min="0" step="1" value="0"></div>
+      <div class="field"><label for="s_mg">Magnesium, Mg</label><input id="s_mg" type="number" inputmode="decimal" min="0" step="1" value="0"></div>
+      <div class="field"><label for="s_na">Sodium, Na</label><input id="s_na" type="number" inputmode="decimal" min="0" step="1" value="0"></div>
+      <div class="field"><label for="s_cl">Chloride, Cl</label><input id="s_cl" type="number" inputmode="decimal" min="0" step="1" value="0"></div>
+      <div class="field"><label for="s_so4">Sulfate, SO₄</label><input id="s_so4" type="number" inputmode="decimal" min="0" step="1" value="0"></div>
+      <div class="field"><label for="s_alk">Alkalinity (CaCO₃)</label><input id="s_alk" type="number" inputmode="decimal" min="0" step="1" value="0"></div>
+    </div>
+    <p class="hint" id="srcLine" style="margin-top:8px"></p>
+
+    <h3 style="margin-bottom:6px">Batch &amp; target</h3>
+    <div class="grid">
+      <div class="field">
+        <label for="vol">Total brewing water</label>
+        <div class="inline">
+          <input id="vol" type="number" inputmode="decimal" step="0.1" min="0" value="8">
+          <select id="volUnit" aria-label="Volume unit"><option value="gal">US gal</option><option value="L">L</option></select>
+        </div>
+      </div>
+    </div>
+    <div class="chips" id="presets" aria-label="Starting profiles" style="margin-top:12px"></div>
+    <div class="grid three">
+      <div class="field"><label for="t_ca">Calcium, Ca</label><input id="t_ca" type="number" inputmode="decimal" min="0" step="1" placeholder="—"></div>
+      <div class="field"><label for="t_mg">Magnesium, Mg</label><input id="t_mg" type="number" inputmode="decimal" min="0" step="1" placeholder="—"></div>
+      <div class="field"><label for="t_na">Sodium, Na</label><input id="t_na" type="number" inputmode="decimal" min="0" step="1" placeholder="—"></div>
+      <div class="field"><label for="t_cl">Chloride, Cl</label><input id="t_cl" type="number" inputmode="decimal" min="0" step="1" placeholder="—"></div>
+      <div class="field"><label for="t_so4">Sulfate, SO₄</label><input id="t_so4" type="number" inputmode="decimal" min="0" step="1" placeholder="—"></div>
+      <div class="field"><label for="t_alk">Alkalinity (CaCO₃)</label><input id="t_alk" type="number" inputmode="decimal" min="0" step="1" placeholder="—"></div>
+    </div>
+    <p class="hint">Target profile in mg/L. A box left blank is <em>not</em> a target of zero — the solver ignores that ion and reports where it lands.</p>
+
+    <h3 style="margin-bottom:6px">Your salt shelf — tick what you own<sup><a href="#fn3">3</a></sup></h3>
+    <div id="shelf"></div>
+    <p class="hint">Calcium chloride comes in two forms and they are <strong>not interchangeable</strong> — tick the one printed on your bag. Chalk is not on this shelf, on purpose<sup><a href="#fn4">4</a></sup>.</p>
+
+    <h3 style="margin-bottom:6px">Options</h3>
+    <div class="field" style="margin-bottom:8px"><label style="font-weight:400;color:var(--ink)"><input type="checkbox" id="optAcid" checked style="width:auto;min-height:0"> Use acid if alkalinity needs to come down<sup><a href="#fn5">5</a></sup></label></div>
+    <div class="field"><label style="font-weight:400;color:var(--ink)"><input type="checkbox" id="optDilute" style="width:auto;min-height:0"> Allow RO dilution when the source is already over target</label></div>
+  </form>
+
+  <section id="outB" aria-live="polite"></section>
+
+  <div class="footnotes">
+    <strong>Notes</strong>
+    <ol>
+      <li id="fn1">The unit traps: sulfate is reported as SO₄ by some labs and as SO₄-S (just the sulfur) by others — a factor of 2.9964 apart. Alkalinity comes as CaCO₃ or as bicarbonate (HCO₃), a factor of 1.2193 apart. Nitrate as NO₃ vs NO₃-N differs by 4.4266. Pick the form your report uses; the conversions are exact ratios of molar masses. The charge-balance check works because a real water sample is electrically neutral: add up the cations and anions in milliequivalents and they must roughly agree. BrewPhase divides by the <em>sum</em> of the two, so a perfectly balanced report reads 0 %.</li>
+      <li id="fn2">Utility reports are often annual averages and can differ from today's tap, especially where the supply switches sources seasonally; a recent lab test is more reliable. The paste reader is a convenience, not a transcription service — it fills the grid, and the grid is yours to correct. Nothing it reads is used until you can see it in a box.</li>
+      <li id="fn3">The hydrate lock. Calcium chloride is sold as the dihydrate (CaCl₂·2H₂O, the common bag) and as anhydrous CaCl₂. Per gram, the anhydrous salt carries about 32 % more chloride. Dose anhydrous salt by dihydrate math and a 100 mg/L chloride target lands at about 132 mg/L. So the shelf makes you name the form, the math uses that form's molar mass, and the form is printed on the brew-day card where future-you can argue with it. Molar masses for every shelf item are printed next to it, and in the project spec.</li>
+      <li id="fn4">No chalk. Chalk (CaCO₃) barely dissolves in water and delivers an unpredictable share of its theoretical alkalinity — the liquor builder reports its theoretical value with a warning because it solves a different problem (a target you type in, from RO). A solver promising per-ion residuals can't include a salt whose contribution is a guess, so chalk is excluded here. Need alkalinity with calcium? Slaked lime. Alkalinity alone? Baking soda. Slaked lime is caustic: gloves and eye protection, add it to water slowly, and store it sealed and dry.</li>
+      <li id="fn5">Acid figures are product-label values: lactic acid 88 % at 1.209 g/mL works out to 11.81 meq/mL; phosphoric acid 85 % at 1.685 g/mL to 14.62 meq/mL, counting phosphoric as one equivalent per mole — at brewing pH, the first proton is the one that lands. Check your bottle's strength; a different strength changes the dose in proportion. This acid neutralizes <em>water</em> alkalinity toward the target profile; acid dosed to the mash itself is the mash pH estimator's territory. The acid also adds a little lactate or phosphate of its own, which is not tracked as an ion here.</li>
+      <li id="fn6">Teaspoons are a convenience, grams are the answer. Spoon densities vary with grind and packing, and this site's density table hasn't been pinned by weighing yet — so salt spoon figures read "weigh it" rather than inventing a number. Acid teaspoons are computed from the exact mL figure (1 US tsp = 4.93 mL), rounded to the nearest quarter.</li>
+      <li id="fn7">Handle slaked lime (calcium hydroxide) with care: it is caustic, irritates skin and eyes, and heats up as it dissolves. Homebrewing beer for personal use is legal federally in the US; check your state and local laws.</li>
+    </ol>
+  </div>
+</main>
+
+<footer class="site"><div class="wrap">BrewPhase — homebrew water science, minus the guesswork. Product-agnostic; no sponsored ingredients.</div></footer>
+
+<script src="assets/brewphase.js"></script>
+<script>
+(function () {
+  'use strict';
+  var B = window.BrewPhase, $ = function (id) { return document.getElementById(id); };
+  var IONS = ['ca', 'mg', 'na', 'cl', 'so4', 'alk'];
+  var LABEL = { ca: 'Calcium, Ca', mg: 'Magnesium, Mg', na: 'Sodium, Na', cl: 'Chloride, Cl', so4: 'Sulfate, SO₄', alk: 'Alkalinity (as CaCO₃)' };
+  var PRESETS = [
+    { name: 'Pale & hoppy', p: { ca: 83, mg: 5, na: 0, cl: 50, so4: 150, alk: 0 } },
+    { name: 'Balanced', p: { ca: 65, mg: 5, na: 0, cl: 75, so4: 75, alk: 0 } },
+    { name: 'Amber & malty', p: { ca: 69, mg: 5, na: 15, cl: 100, so4: 50, alk: 32 } },
+    { name: 'Dark & roasty', p: { ca: 61, mg: 10, na: 30, cl: 100, so4: 50, alk: 65 } }
+  ];
+  var SHELF_DEFAULT = { gypsum: true, calciumChlorideDihydrate: true, calciumChlorideAnhydrous: false, epsom: true, canningSalt: true, bakingSoda: true, slakedLime: false };
+  function store(k, v) { try { if (v === undefined) return localStorage.getItem('bp.' + k); localStorage.setItem('bp.' + k, v); } catch (e) { return null; } }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function fmtG(g) { return g === 0 ? '0' : g < 10 ? g.toFixed(2) : g.toFixed(1); }
+  function numOrNull(id) { var v = parseFloat($(id).value); return isFinite(v) && v >= 0 ? v : null; }
+  function numOr0(id) { var v = numOrNull(id); return v == null ? 0 : v; }
+
+  // ---------------- Stage A ----------------
+  var stageA = null; // { profile, bal, sourceLine }
+  var GRID = ['ca', 'mg', 'na', 'cl', 'k', 'ph', 'fe', 'tds', 'hardness'];
+  $('readBtn').addEventListener('click', function () {
+    var parsed = B.parseReportText($('paste').value);
+    Object.keys(parsed.values).forEach(function (k) { $('a_' + k).value = parsed.values[k]; });
+    Object.keys(parsed.forms).forEach(function (k) { $('a_' + k).value = parsed.forms[k]; });
+    $('parseNote').textContent = parsed.found.length
+      ? 'Filled ' + parsed.found.length + ' field' + (parsed.found.length === 1 ? '' : 's') + ' from your paste — check every value, then the gate below re-checks the set.'
+      : 'No labelled values found in that text — type the report into the grid instead.';
+    calcA();
+  });
+  GRID.concat(['sulfate', 'alkalinity', 'nitrate']).forEach(function (k) { $('a_' + k).addEventListener('input', calcA); });
+  ['sulfateForm', 'alkalinityForm', 'nitrateForm'].forEach(function (k) { $('a_' + k).addEventListener('change', calcA); });
+
+  function calcA() {
+    var input = {
+      ca: numOrNull('a_ca'), mg: numOrNull('a_mg'), na: numOrNull('a_na'), cl: numOrNull('a_cl'),
+      k: numOrNull('a_k'), ph: numOrNull('a_ph'), fe: numOrNull('a_fe'), tds: numOrNull('a_tds'),
+      hardness: numOrNull('a_hardness'),
+      sulfate: numOrNull('a_sulfate'), sulfateForm: $('a_sulfateForm').value,
+      alkalinity: numOrNull('a_alkalinity'), alkalinityForm: $('a_alkalinityForm').value,
+      nitrate: numOrNull('a_nitrate'), nitrateForm: $('a_nitrateForm').value
+    };
+    var anyGiven = ['ca', 'mg', 'na', 'cl', 'sulfate', 'alkalinity'].some(function (k) { return input[k] != null; });
+    if (!anyGiven) {
+      stageA = null;
+      $('outA').innerHTML = '<div class="note info">Paste a report or type values above — the profile, the balance gate and the cross-checks appear here.</div>';
+      calcB();
+      return;
+    }
+    var r, bal, hc;
+    try {
+      r = B.normalizeReport(input);
+      bal = B.chargeBalance(r.profile);
+      hc = B.hardnessCheck(r.hardnessReported, r.profile.ca, r.profile.mg);
+    } catch (e) { $('outA').innerHTML = '<div class="note info">' + esc(e.message) + '</div>'; stageA = null; calcB(); return; }
+    var p = r.profile;
+    var verdictWord = bal.verdict === 'balanced' ? 'balanced ✓' : bal.verdict === 'caution' ? 'caution ⚠' : bal.verdict === 'does-not-balance' ? 'does not balance ✗' : 'balance skipped';
+    stageA = { profile: p, sourceLine: 'Report (Stage A), ' + verdictWord };
+
+    var html = '';
+    if (bal.verdict === 'balanced') html += '<div class="note ok"><strong>Balanced.</strong> Cations ' + bal.cations.toFixed(2) + ' meq/L vs anions ' + bal.anions.toFixed(2) + ' meq/L — imbalance ' + bal.imbalancePct.toFixed(1) + ' %. This report hangs together.</div>';
+    else if (bal.verdict === 'caution') html += '<div class="note warn"><strong>Caution.</strong> Cations ' + bal.cations.toFixed(2) + ' meq/L vs anions ' + bal.anions.toFixed(2) + ' meq/L — imbalance ' + bal.imbalancePct.toFixed(1) + ' %. Usable, but something minor is missing or rounded. The profile carries the flag.</div>';
+    else if (bal.verdict === 'does-not-balance') html += '<div class="note bad"><strong>Does not balance.</strong> Cations ' + bal.cations.toFixed(2) + ' meq/L vs anions ' + bal.anions.toFixed(2) + ' meq/L — imbalance ' + bal.imbalancePct.toFixed(1) + ' %. The report or the transcription is wrong somewhere — re-check the entries, especially the sulfate and alkalinity forms, or re-sample.</div>';
+    else html += '<div class="note info"><strong>Balance not meaningful.</strong> Under 0.5 meq/L of cations there is almost nothing to balance — this is RO-class water, so the gate is skipped.</div>';
+
+    var missing = ['ca', 'mg', 'na', 'cl', 'so4', 'alk'].filter(function (k) { return !r.given[k === 'so4' ? 'so4' : k === 'alk' ? 'alk' : k]; });
+    if (missing.length) html += '<div class="note info">This profile is partial — no value yet for: ' + missing.map(function (k) { return LABEL[k]; }).join(', ') + '. Missing ions are treated as zero until you add them.</div>';
+
+    html += '<div class="card"><h3>Source profile (mg/L)</h3><div class="scroll-x"><table class="data"><thead><tr><th>Ion</th><th>Value</th></tr></thead><tbody>';
+    IONS.forEach(function (k) { html += '<tr><td>' + LABEL[k] + '</td><td>' + p[k].toFixed(1) + '</td></tr>'; });
+    html += '<tr><td>Bicarbonate, HCO₃</td><td>' + p.hco3.toFixed(1) + '</td></tr>';
+    if (p.k != null) html += '<tr><td>Potassium, K</td><td>' + p.k.toFixed(1) + '</td></tr>';
+    if (p.no3 != null) html += '<tr><td>Nitrate, NO₃</td><td>' + p.no3.toFixed(1) + '</td></tr>';
+    var ra = B.residualAlkalinity(p.alk, p.ca, p.mg);
+    html += '<tr><td>Residual alkalinity (as CaCO₃)</td><td>' + ra.toFixed(1) + '</td></tr>';
+    var cs = B.chlorideSulfate(p.cl, p.so4);
+    if (cs.ratio !== null && isFinite(cs.ratio)) html += '<tr><td>Cl:SO₄ ratio</td><td>' + cs.ratio.toFixed(2) + ' (' + esc(cs.band.label.toLowerCase()) + ')</td></tr>';
+    html += '</tbody></table></div>';
+    if (hc.reported != null) {
+      html += '<p class="hint" style="margin-top:10px">Hardness cross-check: reported ' + hc.reported.toFixed(0) + ' vs computed ' + hc.computed.toFixed(0) + ' mg/L as CaCO₃ — ' +
+        (hc.flagged ? '<strong style="color:var(--warn)">they disagree</strong>; one of Ca, Mg or the hardness figure is off.' : 'they agree.') + '</p>';
+    }
+    html += '<p class="hint" style="margin-top:6px">' +
+      '<button type="button" class="btn primary" id="toSolver">Send to the solver ↓</button> · ' +
+      '<a href="water-blending.html" id="toBlend">Blend this water →</a> · ' +
+      '<a href="chloride-sulfate.html?cl=' + p.cl.toFixed(0) + '&amp;so4=' + p.so4.toFixed(0) + '">Check Cl:SO₄ →</a> · ' +
+      '<a href="mash-ph.html?ra=' + ra.toFixed(0) + '">Estimate mash pH →</a></p></div>';
+    B.reportAdvisories(p).forEach(function (a) { html += '<div class="note warn">' + esc(a.text) + '</div>'; });
+    $('outA').innerHTML = html;
+    $('toSolver').addEventListener('click', function () {
+      setSrcMode('report');
+      document.querySelectorAll('form.card')[1].scrollIntoView({ behavior: 'smooth' });
+    });
+    $('toBlend').addEventListener('click', function () {
+      var prof = {}; IONS.forEach(function (k) { prof[k] = Math.round(p[k] * 10) / 10; });
+      store('tapProfile', JSON.stringify(prof));
+    });
+    calcB();
+  }
+
+  // ---------------- Stage B ----------------
+  var srcMode = 'report';
+  function setSrcMode(m) {
+    srcMode = m;
+    document.querySelectorAll('[data-src]').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.src === m); });
+    $('manualBox').hidden = m !== 'manual';
+    calcB();
+  }
+  document.querySelectorAll('[data-src]').forEach(function (b) { b.addEventListener('click', function () { setSrcMode(b.dataset.src); }); });
+
+  B.SALT_FORM_ORDER.forEach(function (k) {
+    var s = B.SALT_FORMS[k];
+    var div = document.createElement('div');
+    div.className = 'field'; div.style.marginBottom = '10px';
+    div.innerHTML = '<label style="font-weight:400;color:var(--ink)"><input type="checkbox" id="sh_' + k + '"' + (SHELF_DEFAULT[k] ? ' checked' : '') + ' style="width:auto;min-height:0"> <strong>' + esc(s.name) + '</strong></label>' +
+      '<span class="hint">' + esc(s.formula) + ' · M = ' + s.molarMass.toFixed(3) + ' g/mol' + (k === 'calciumChlorideDihydrate' ? ' · the common bag' : k === 'calciumChlorideAnhydrous' ? ' · check your bag — not the common form' : '') + '</span>' +
+      '<span class="inline" style="align-items:center"><input id="mx_' + k + '" type="number" inputmode="decimal" min="0" step="0.5" placeholder="no max" style="max-width:130px" aria-label="Max grams for ' + esc(s.name) + '"><span class="hint">max grams (optional)</span></span>';
+    $('shelf').appendChild(div);
+  });
+
+  PRESETS.forEach(function (pr) {
+    var b = document.createElement('button'); b.type = 'button'; b.textContent = pr.name;
+    b.addEventListener('click', function () { IONS.forEach(function (k) { $('t_' + k).value = pr.p[k]; }); calcB(); });
+    $('presets').appendChild(b);
+  });
+
+  var u = store('volUnit'); if (u) { $('volUnit').value = u; if (u === 'L') $('vol').value = 30; }
+  $('volUnit').addEventListener('change', function () {
+    var v = parseFloat($('vol').value);
+    if (isFinite(v)) $('vol').value = Math.round((this.value === 'L' ? B.units.galToL(v) : B.units.lToGal(v)) * 100) / 100;
+    store('volUnit', this.value); calcB();
+  });
+  ['vol', 'optAcid', 'optDilute'].forEach(function (id) { $(id).addEventListener('input', calcB); $(id).addEventListener('change', calcB); });
+  IONS.forEach(function (k) {
+    $('t_' + k).addEventListener('input', calcB);
+    $('s_' + k).addEventListener('input', calcB);
+  });
+  B.SALT_FORM_ORDER.forEach(function (k) {
+    $('sh_' + k).addEventListener('change', calcB);
+    $('mx_' + k).addEventListener('input', calcB);
+  });
+
+  function currentSource() {
+    if (srcMode === 'ro') return { profile: { ca: 0, mg: 0, na: 0, cl: 0, so4: 0, alk: 0 }, name: 'RO / distilled' };
+    if (srcMode === 'manual') {
+      var p = {}; IONS.forEach(function (k) { p[k] = numOr0('s_' + k); });
+      return { profile: p, name: 'Typed profile' };
+    }
+    if (stageA) { var q = {}; IONS.forEach(function (k) { q[k] = stageA.profile[k]; }); return { profile: q, name: stageA.sourceLine }; }
+    return null;
+  }
+
+  function fmtTsp(tsp) {
+    if (tsp == null) return 'weigh it<sup><a href="#fn6">6</a></sup>';
+    var q = Math.round(tsp * 4) / 4;
+    return '≈ ' + (q % 1 === 0 ? q.toFixed(0) : q.toFixed(2).replace(/0$/, '')) + ' tsp';
+  }
+
+  function calcB() {
+    var src = currentSource();
+    $('srcLine').textContent = src ? 'Source: ' + src.name + ' — ' + IONS.map(function (k) { return LABEL[k].split(',')[0] + ' ' + src.profile[k].toFixed(0); }).join(' · ') + ' mg/L.' : '';
+    var target = {}, anyTarget = false;
+    IONS.forEach(function (k) { var v = numOrNull('t_' + k); target[k] = v; if (v != null) anyTarget = true; });
+    if (!src) { $('outB').innerHTML = '<div class="note info">Stage B is waiting on a source: run Stage A, type a profile, or pick RO / distilled.</div>'; return; }
+    if (!anyTarget) { $('outB').innerHTML = '<div class="note info">Set at least one target — a preset chip is the fast way — and the solver will work with the ions you name.</div>'; return; }
+    var v = parseFloat($('vol').value), L = $('volUnit').value === 'L' ? v : B.units.galToL(v);
+    var shelf = B.SALT_FORM_ORDER.filter(function (k) { return $('sh_' + k).checked; });
+    var maxGrams = {};
+    B.SALT_FORM_ORDER.forEach(function (k) { var mx = numOrNull('mx_' + k); if (mx != null) maxGrams[k] = mx; });
+    var r;
+    try {
+      r = B.solveWater({ source: src.profile, target: target, volumeL: L, shelf: shelf,
+        maxGrams: maxGrams, allowAcid: $('optAcid').checked, allowDilution: $('optDilute').checked,
+        sourceName: src.name });
+    } catch (e) { $('outB').innerHTML = '<div class="note info">' + esc(e.message.replace('volumeL', 'Water volume')) + '</div>'; return; }
+
+    var html = '';
+    if (!r.ok) {
+      var names = r.blockers.map(function (k) { return LABEL[k] + ' (' + src.profile[k].toFixed(0) + ' in the source vs ' + r.target[k].toFixed(0) + ' targeted)'; }).join('; ');
+      html += '<div class="note bad"><strong>No salt can fix this source.</strong> These ions are already above target and additions only add: ' + esc(names) + '. Dilute with RO (tick “allow RO dilution”), raise the target, or blend first.</div>';
+      r.notes.forEach(function (n) { html += '<div class="note warn">' + esc(n.text) + '</div>'; });
+      $('outB').innerHTML = html;
+      return;
+    }
+    r.notes.forEach(function (n) { html += '<div class="note warn">' + esc(n.text) + '</div>'; });
+    if (r.dilution) {
+      var f = r.dilution.tapFraction;
+      html += '<div class="note info"><strong>Dilute first:</strong> ' + (f * 100).toFixed(1) + ' % source water + ' + ((1 - f) * 100).toFixed(1) + ' % RO — that is ' +
+        ($('volUnit').value === 'L' ? r.dilution.tapVolumeL.toFixed(1) + ' L source + ' + r.dilution.diluentVolumeL.toFixed(1) + ' L RO'
+                                   : B.units.lToGal(r.dilution.tapVolumeL).toFixed(2) + ' gal source + ' + B.units.lToGal(r.dilution.diluentVolumeL).toFixed(2) + ' gal RO') +
+        ' of your ' + esc($('vol').value) + ' ' + ($('volUnit').value === 'L' ? 'L' : 'US gal') + '. The mixes below are solved against the diluted water.</div>';
+    }
+
+    r.mixes.forEach(function (mx, idx) {
+      var usedSalts = B.SALT_FORM_ORDER.filter(function (k) { return mx.doses[k] && mx.doses[k].grams > 0.001; });
+      html += '<div class="' + (idx === 0 ? 'result' : 'card') + '"><div class="sub">Mix ' + (idx + 1) + ' of ' + r.mixes.length + '</div>' +
+        '<div class="big" style="font-size:1.5rem">' + esc(mx.label) + '</div>' +
+        '<div class="sub">From: ' + esc(r.sourceName || 'source') + (r.dilution ? ' (diluted as above)' : '') + ' · ' + esc($('vol').value) + ' ' + ($('volUnit').value === 'L' ? 'L' : 'US gal') + ' total water</div>';
+      if (mx.note) html += '<div class="sub">' + esc(mx.note) + '</div>';
+      if (!usedSalts.length && !mx.acid) {
+        html += '<p style="margin:10px 0 0">No additions — with this shelf, nothing moves the named targets closer.</p>';
+      } else {
+        html += '<div class="scroll-x"><table class="data" style="margin-top:8px"><thead><tr><th>Add</th><th>Grams</th><th>mg/L</th><th>Kitchen<sup><a href="#fn6">6</a></sup></th></tr></thead><tbody>';
+        usedSalts.forEach(function (k) {
+          var s = B.SALT_FORMS[k], d = mx.doses[k];
+          html += '<tr><td>' + esc(s.name) + ' <span class="hint">' + esc(s.formula) + '</span></td><td style="font-weight:700">' + fmtG(d.grams) + ' g</td><td>' + d.mgPerL.toFixed(1) + '</td><td>' + fmtTsp(d.tsp) + '</td></tr>';
+        });
+        if (mx.acid) {
+          var la = mx.acid.options.lactic88, ph = mx.acid.options.phosphoric85;
+          html += '<tr><td>Lactic acid, 88% <span class="hint">or</span> Phosphoric acid, 85%<sup><a href="#fn5">5</a></sup></td>' +
+            '<td style="font-weight:700">' + la.ml.toFixed(1) + ' mL <span class="hint">or</span> ' + ph.ml.toFixed(1) + ' mL</td>' +
+            '<td>' + mx.acid.meqPerL.toFixed(2) + ' meq/L</td><td>' + fmtTsp(la.tsp) + ' <span class="hint">or</span> ' + fmtTsp(ph.tsp) + '</td></tr>';
+        }
+        html += '</tbody></table></div>';
+      }
+      mx.constrainedBy.forEach(function (name) {
+        html += '<div class="note warn" style="margin-top:10px">Constrained by your max on ' + esc(name) + ' — lifting it would land closer to target.</div>';
+      });
+      html += '<div class="scroll-x"><table class="data" style="margin-top:10px"><thead><tr><th>Ion</th><th>Source</th><th>Target</th><th>Result</th><th>Δ</th></tr></thead><tbody>';
+      IONS.forEach(function (k) {
+        var res = mx.residuals[k];
+        html += '<tr><td>' + LABEL[k] + '</td><td>' + r.sourceUsed[k].toFixed(1) + '</td><td>' +
+          (r.targetGiven[k] ? r.target[k].toFixed(0) : '—') + '</td><td><strong>' + mx.achieved[k].toFixed(1) + '</strong></td><td>' +
+          (res == null ? '·' : (res > 0 ? '+' : '') + res.toFixed(1) + ' ' + (mx.within[k] ? '✓' : '⚠')) + '</td></tr>';
+      });
+      html += '</tbody></table></div></div>';
+    });
+    $('outB').innerHTML = html;
+  }
+
+  calcA();
+})();
+</script>
+</body>
+</html>

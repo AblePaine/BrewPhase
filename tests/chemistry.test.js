@@ -6,9 +6,11 @@ const B = require('../assets/brewphase.js');
 const close = (a, b, tol, msg) => assert.ok(Math.abs(a - b) <= tol, `${msg || ''} expected ${b} ± ${tol}, got ${a}`);
 
 test('atomic-weight table matches the family table exactly', () => {
+  // P = 30.974 added 2026-11 for engine 6 (phosphoric acid) — the one
+  // sanctioned addition to the shared table; see SPEC.md section 6.
   assert.deepEqual({ ...B.AW }, {
     N: 14.007, O: 15.999, Na: 22.990, K: 39.098, Mg: 24.305,
-    Ca: 40.078, S: 32.06, C: 12.011, H: 1.008, Cl: 35.45
+    Ca: 40.078, S: 32.06, C: 12.011, H: 1.008, Cl: 35.45, P: 30.974
   });
   assert.ok(Object.isFrozen(B.AW));
 });
